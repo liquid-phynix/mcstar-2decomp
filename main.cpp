@@ -2,14 +2,14 @@
 #include <cstdlib>
 #include <cstdio>
 #include <complex>
-#include <list>
-#include <utility>
+#include <vector>
 #include <string>
 #include <functional>
 #include <mpi.h>
 #include <unistd.h>
 #include <sys/mman.h>
 
+#define __CL_ENABLE_EXCEPTIONS
 #include "cl.hpp"
 #include <clFFT.h>
 #include "interop.h"
@@ -160,10 +160,10 @@ class Array {
 public:
     enum PencilType {XD = 1, YD, ZD};
     PencilType pt;
+    int alloc_bytes;
 private:
     const DecompInfo di;
     F* ptr;
-    int alloc_bytes;
 public:
     Array(DecompInfo _di, PencilType _pt = XD): di(_di), ptr(NULL), alloc_bytes(0), pt(_pt){
         if(di.float_size != sizeof(F)){
@@ -223,6 +223,120 @@ public:
     }
 };
 
+template <typename RT>
+class DistributedFFT {
+private:
+    typedef std::complex<RT> CT;
+    cl::Context& context;
+    cl::CommandQueue& queue;
+    const DecompInfo di_real, di_cmpl;
+    clfftPlanHandle plan_x_r2c, plan_x_c2r, plan_y, plan_z;
+    Array<RT> interm;
+public:
+    ~DistributedFFT(){
+        clfftDestroyPlan(&plan_x_r2c);
+        clfftDestroyPlan(&plan_x_c2r);
+        clfftDestroyPlan(&plan_y);
+        clfftDestroyPlan(&plan_z);
+    }
+    DistributedFFT(cl::Context& _context, cl::CommandQueue& _queue, const DecompInfo& _di_real, const DecompInfo& _di_cmpl):
+        context(_context), queue(_queue), di_real(_di_real), di_cmpl(_di_cmpl), interm(_di_cmpl){
+
+        size_t shape[3] = {};
+        // plan_x_r2c: INPUT REAL X-stencil, OUTPUT CMPL X-stencil
+        shape = {di_real.xsize.x, di_real.xsize.y, di_real.xsize.z};
+        OCLERR(clfftCreateDefaultPlan(&plan_x_r2c, context.object_, CLFFT_1D, shape));
+        // STRIDES
+        shape = {1, di_real.xsize.x, di_real.xsize.x * di_real.xsize.y};
+        OCLERR(clfftSetPlanInStride(plan_x_r2c, CLFFT_3D, shape));
+        shape = {1, di_cmpl.xsize.x, di_cmpl.xsize.x * di_cmpl.xsize.y};
+        OCLERR(clfftSetPlanOutStride(plan_x_r2c, CLFFT_3D, shape));
+
+        // plan_x_c2r: INPUT CMPL X-stencil, OUTPUT REAL X-stencil
+        shape = {di_cmpl.xsize.x, di_cmpl.xsize.y, di_cmpl.xsize.z};
+        OCLERR(clfftCreateDefaultPlan(&plan_x_c2r, context.object_, CLFFT_1D, shape));
+        // STRIDES
+        shape = {1, di_cmpl.xsize.x, di_cmpl.xsize.x * di_cmpl.xsize.y};
+        OCLERR(clfftSetPlanInStride(plan_x_c2r, CLFFT_3D, shape));
+        shape = {1, di_real.xsize.x, di_real.xsize.x * di_real.xsize.y};
+        OCLERR(clfftSetPlanOutStride(plan_x_c2r, CLFFT_3D, shape));
+
+        // plan_y: INPUT CMPL Y-stencil, OUTPUT CMPL Y-stencil - FFT along dim Y
+        shape = {di_cmpl.ysize.y, di_cmpl.ysize.x, di_cmpl.ysize.z};
+        OCLERR(clfftCreateDefaultPlan(&plan_y,     context.object_, CLFFT_1D, shape));
+        // STRIDES
+        shape = {di_cmpl.ysize.x, 1, di_cmpl.ysize.x * di_cmpl.ysize.y};
+        OCLERR(clfftSetPlanInStride(plan_y,  CLFFT_3D, shape));
+        OCLERR(clfftSetPlanOutStride(plan_y, CLFFT_3D, shape));
+
+        // plan_z: INPUT CMPL Z-stencil, OUTPUT CMPL Z-stencil
+        shape = {di_cmpl.zsize.z, di_cmpl.zsize.x, di_cmpl.zsize.y};
+        OCLERR(clfftCreateDefaultPlan(&plan_z,     context.object_, CLFFT_1D, shape));
+        // STRIDES
+        shape = {di_cmpl.zsize.x * di_cmpl.zsize.y, 1, di_cmpl.zsize.x};
+        OCLERR(clfftSetPlanInStride(plan_y,  CLFFT_3D, shape));
+        OCLERR(clfftSetPlanOutStride(plan_y, CLFFT_3D, shape));
+
+        clfftPrecision prec = sizeof(RT) == 4 ? CLFFT_SINGLE : CLFFT_DOUBLE;
+        //clfftPrecision prec = precbytes == 4 ? CLFFT_SINGLE_FAST : CLFFT_DOUBLE_FAST;
+        OCLERR(clfftSetPlanPrecision(plan_x_r2c, prec));
+        OCLERR(clfftSetPlanPrecision(plan_x_c2r, prec));
+        OCLERR(clfftSetPlanPrecision(plan_y,     prec));
+        OCLERR(clfftSetPlanPrecision(plan_z,     prec));
+
+        OCLERR(clfftSetLayout(plan_x_r2c, CLFFT_REAL, CLFFT_HERMITIAN_INTERLEAVED));
+        OCLERR(clfftSetLayout(plan_x_c2r, CLFFT_HERMITIAN_INTERLEAVED, CLFFT_REAL));
+        OCLERR(clfftSetLayout(plan_y, CLFFT_COMPLEX_INTERLEAVED, CLFFT_COMPLEX_INTERLEAVED));
+        OCLERR(clfftSetLayout(plan_z, CLFFT_COMPLEX_INTERLEAVED, CLFFT_COMPLEX_INTERLEAVED));
+
+        OCLERR(clfftSetResultLocation(plan_x_r2c, CLFFT_OUTOFPLACE));
+        OCLERR(clfftSetResultLocation(plan_x_c2r, CLFFT_OUTOFPLACE));
+        OCLERR(clfftSetResultLocation(plan_y,     CLFFT_OUTOFPLACE));
+        OCLERR(clfftSetResultLocation(plan_z,     CLFFT_OUTOFPLACE));
+
+        OCLERR(clfftBakePlan(plan_x_r2c, 1, &queue.object_, NULL, NULL));
+        OCLERR(clfftBakePlan(plan_x_c2r, 1, &queue.object_, NULL, NULL));
+        OCLERR(clfftBakePlan(plan_y,     1, &queue.object_, NULL, NULL));
+        OCLERR(clfftBakePlan(plan_z,     1, &queue.object_, NULL, NULL));
+    }
+    void execute_x_r2c(Array<RT>& in, Array<CT>& out){
+        RT* ptr_in = in.ptr;
+        CT* ptr_out = out.ptr;
+        if(ptr_in == ptr_out) ERROR("in-place transforms are not supported");
+        cl::Buffer buff_in(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, in.alloc_bytes, ptr_in);
+        cl::Buffer buff_out(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, out.alloc_bytes, ptr_out);
+        //queue.enqueueMapBuffer(buf_both, CL_TRUE, CL_MAP_READ | CL_MAP_WRITE, 0, len * sizeof(int), NULL, &event_dtoh)
+        OCLERR(clfftEnqueueTransform(plan_x_r2c, CLFFT_FORWARD, 1, &queue.object_, 0, NULL, NULL, &buff_in.object_, &buff_out.object_, NULL));
+        queue.finish();
+    }
+    void execute_x_c2r(Array<CT>& in, Array<RT>& out){
+        CT* ptr_in = in.ptr;
+        RT* ptr_out = out.ptr;
+        if(ptr_in == ptr_out) ERROR("in-place transforms are not supported");
+        cl::Buffer buff_in(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, in.alloc_bytes, ptr_in);
+        cl::Buffer buff_out(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, out.alloc_bytes, ptr_out);
+        OCLERR(clfftEnqueueTransform(plan_x_c2r, CLFFT_BACKWARD, 1, &queue.object_, 0, NULL, NULL, &buff_in.object_, &buff_out.object_, NULL));
+        queue.finish();
+    }
+    void execute_y(Array<CT>& in, Array<CT>& out, clfftDirection dir){
+        CT* ptr_in = in.ptr;
+        CT* ptr_out = out.ptr;
+        if(ptr_in == ptr_out) ERROR("in-place transforms are not supported");
+        cl::Buffer buff_in(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, in.alloc_bytes, ptr_in);
+        cl::Buffer buff_out(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, out.alloc_bytes, ptr_out);
+        OCLERR(clfftEnqueueTransform(plan_y, dir, 1, &queue.object_, 0, NULL, NULL, &buff_in.object_, &buff_out.object_, NULL));
+        queue.finish();
+    }
+    void execute_z(Array<CT>& in, Array<CT>& out, clfftDirection dir){
+        CT* ptr_in = in.ptr;
+        CT* ptr_out = out.ptr;
+        if(ptr_in == ptr_out) ERROR("in-place transforms are not supported");
+        cl::Buffer buff_in(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, in.alloc_bytes, ptr_in);
+        cl::Buffer buff_out(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, out.alloc_bytes, ptr_out);
+        OCLERR(clfftEnqueueTransform(plan_z, dir, 1, &queue.object_, 0, NULL, NULL, &buff_in.object_, &buff_out.object_, NULL));
+        queue.finish();
+    }
+};
 /*
     void r2c(std::string in, std::string out){
         void* in_ptr = get_array(in);
@@ -275,10 +389,8 @@ public:
 
 #ifdef SINGLEFLOAT
 typedef float Float;
-//typedef std::complex<float> Complex;
 #else
 typedef double Float;
-//typedef std::complex<double> Complex;
 #endif
 
 void init_array(const int& gi0, const int& gi1, const int& gi2, Float& v){ v = gi0; }
@@ -286,18 +398,23 @@ void init_array(const int& gi0, const int& gi1, const int& gi2, Float& v){ v = g
 //void init_array(const int& gi0, const int& gi1, const int& gi2, Float& v){ v = gi2; }
 void init_cmpl_array(const int& gi0, const int& gi1, const int& gi2, std::complex<Float>& v){ v = {Float(gi0), Float(gi1)}; }
 
+int3 to_hermitian(int3 v){ return {v.x/2+1, v.y, v.z}; }
+
 int main(int argc, char* argv[]){
     int3 real_shape = {8, 8, 8};
-    int3 cmpl_shape = {real_shape.x / 2 + 1, real_shape.y, real_shape.z};
+    int3 cmpl_shape = to_hermitian(real_shape);
 
-    Bookkeeping(0, Bookkeeping::CPU, real_shape);
+    Bookkeeping bk(0, Bookkeeping::CPU, real_shape);
 
     DecompInfo decomp_real(real_shape);
-    std::cout << decomp_real << std::endl;
     DecompInfo decomp_cmpl(cmpl_shape);
+
+    std::cout << decomp_real << std::endl;
     std::cout << decomp_cmpl << std::endl;
 
     Array<Float> arr(decomp_real);
+
+    DistributedFFT<Float> fft(bk.context, bk.queue, decomp_real, decomp_cmpl);
 
 /*
     DistributedFFT<Float> fft(8, 8, 8);

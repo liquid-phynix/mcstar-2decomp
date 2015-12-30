@@ -58,7 +58,6 @@ CONTAINS
   config = [di%xst-1, di%xen-1, di%xsz, di%yst-1, di%yen-1, di%ysz, di%zst-1, di%zen-1, di%zsz]
  END SUBROUTINE
 
-
  SUBROUTINE save_array(array_ptr, elem_size, decomp_info_index, pencil_kind, fn_ptr, fn_len) BIND(C)
   INTEGER(c_int), INTENT(IN) :: elem_size, decomp_info_index, pencil_kind, fn_len
   TYPE(c_ptr) :: array_ptr, fn_ptr
