@@ -33,9 +33,10 @@ std::ostream& operator<<(std::ostream& os, const int3& i3){
     return os;
 }
 
+template<typename RT>
 class Bookkeeping {
     public:
-        static const cl_device_type ALL = CL_DEVICE_TYPE_ALL, GPU = CL_DEVICE_TYPE_GPU, CPU = CL_DEVICE_TYPE_CPU;
+        //static const cl_device_type ALL = CL_DEVICE_TYPE_ALL, GPU = CL_DEVICE_TYPE_GPU, CPU = CL_DEVICE_TYPE_CPU;
         int size, rank;
         cl::Context context;
         cl::CommandQueue queue;
@@ -91,7 +92,8 @@ class Bookkeeping {
         context = cl::Context(devt, cps);
         std::vector<cl::Device> devices = context.getInfo<CL_CONTEXT_DEVICES>();
         if(devicenum >= devices.size()){
-            ERROR("devicenum out of range");
+            //ERROR("devicenum out of range");
+            devicenum = 0;
         }
         std::string device_name;
         devices[devicenum].getInfo(CL_DEVICE_NAME, &device_name);
@@ -112,11 +114,18 @@ class Bookkeeping {
 
         int proc_grid[2] = {0, 0};
         initialize(gshape, proc_grid);
+        int float_size;
+        get_float_size(&float_size);
+        if(float_size != sizeof(RT)){
+            fprintf(stderr, "sizeof(F) = %d , mytype_bytes = %d\n", sizeof(RT), float_size);
+            ERROR("main() and 2DECOMP float sizes differ");
+        }
     }
     ~Bookkeeping(){
         finalize();
-        OCLERR(clfftTeardown());
         MPI::Finalize();
+        //MPI::Finalize();
+        //OCLERR(clfftTeardown());
     }
 };
 
@@ -161,15 +170,13 @@ public:
     enum PencilType {XD = 1, YD, ZD};
     PencilType pt;
     int alloc_bytes;
-private:
-    const DecompInfo di;
     F* ptr;
+    const DecompInfo di;
 public:
+    void set_x_pencil(){ pt = XD; }
+    void set_y_pencil(){ pt = YD; }
+    void set_z_pencil(){ pt = ZD; }
     Array(DecompInfo _di, PencilType _pt = XD): di(_di), ptr(NULL), alloc_bytes(0), pt(_pt){
-        if(di.float_size != sizeof(F)){
-            fprintf(stderr, "sizeof(F) = %d , mytype_bytes = %d\n", sizeof(F), di.float_size);
-            ERROR("main() and 2DECOMP float sizes differ");
-        }
         // calc. max number of array elements from the 3 decompositions X,Y,Z
         int lx = di.xsize.x * di.xsize.y * di.xsize.z;
         int ly = di.ysize.x * di.ysize.y * di.ysize.z;
@@ -183,12 +190,10 @@ public:
         memset(ptr, 0, alloc_bytes);
     }
     ~Array(){
-        std::free(ptr);
+        //std::free(ptr);
     }
-    void save_real(std::string fn){
-        int fn_len = fn.size();
-        int elem_size = sizeof(F);
-        save_array(ptr, &elem_size, &di.decomp_info_fortran_index, &pt, fn.c_str(), &fn_len);
+    void save(std::string fn){
+        save_array(ptr, sizeof(F), di.decomp_info_fortran_index, pt, (void*)fn.c_str(), fn.size());
     }
     void over(std::function<void (const int&, const int&, const int&, F&)> closure){
         F* ptr2 = ptr;
@@ -221,6 +226,11 @@ public:
                     closure(ixg, iyg, izg, *ptr2);
                     ptr2++; }}}
     }
+    void transpose_into(Array<F>& other){
+        if(di.decomp_info_fortran_index != other.di.decomp_info_fortran_index)
+            ERROR("arrays belong to different decomp_info objects, not transposeable")
+        global_transposition(ptr, pt, other.ptr, other.pt, di.decomp_info_fortran_index);
+    }
 };
 
 template <typename RT>
@@ -231,13 +241,13 @@ private:
     cl::CommandQueue& queue;
     const DecompInfo di_real, di_cmpl;
     clfftPlanHandle plan_x_r2c, plan_x_c2r, plan_y, plan_z;
-    Array<RT> interm;
+    Array<CT> interm;
 public:
     ~DistributedFFT(){
-        clfftDestroyPlan(&plan_x_r2c);
-        clfftDestroyPlan(&plan_x_c2r);
-        clfftDestroyPlan(&plan_y);
-        clfftDestroyPlan(&plan_z);
+        //clfftDestroyPlan(&plan_x_r2c);
+        //clfftDestroyPlan(&plan_x_c2r);
+        //clfftDestroyPlan(&plan_y);
+        //clfftDestroyPlan(&plan_z);
     }
     DistributedFFT(cl::Context& _context, cl::CommandQueue& _queue, const DecompInfo& _di_real, const DecompInfo& _di_cmpl):
         context(_context), queue(_queue), di_real(_di_real), di_cmpl(_di_cmpl), interm(_di_cmpl){
@@ -299,99 +309,84 @@ public:
         OCLERR(clfftBakePlan(plan_y,     1, &queue.object_, NULL, NULL));
         OCLERR(clfftBakePlan(plan_z,     1, &queue.object_, NULL, NULL));
     }
-    void execute_x_r2c(Array<RT>& in, Array<CT>& out){
+    void execute_x_r2c(cl_mem* in, cl_mem* out){
+        OCLERR(clfftEnqueueTransform(plan_x_r2c, CLFFT_FORWARD, 1, &queue.object_, 0, NULL, NULL, in, out, NULL));
+        queue.finish();
+    }
+    void execute_x_c2r(cl_mem* in, cl_mem* out){
+        OCLERR(clfftEnqueueTransform(plan_x_c2r, CLFFT_BACKWARD, 1, &queue.object_, 0, NULL, NULL, in, out, NULL));
+        queue.finish();
+    }
+    void execute_y(cl_mem* in, cl_mem* out, clfftDirection dir){
+        OCLERR(clfftEnqueueTransform(plan_y, dir, 1, &queue.object_, 0, NULL, NULL, in, out, NULL));
+        queue.finish();
+    }
+    void execute_z(cl_mem* in, cl_mem* out, clfftDirection dir){
+        OCLERR(clfftEnqueueTransform(plan_z, dir, 1, &queue.object_, 0, NULL, NULL, in, out, NULL));
+        queue.finish();
+    }
+    void r2c(Array<RT>& in, Array<CT>& out){
         RT* ptr_in = in.ptr;
         CT* ptr_out = out.ptr;
-        if(ptr_in == ptr_out) ERROR("in-place transforms are not supported");
+        CT* ptr_interm = interm.ptr;
         cl::Buffer buff_in(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, in.alloc_bytes, ptr_in);
         cl::Buffer buff_out(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, out.alloc_bytes, ptr_out);
-        //queue.enqueueMapBuffer(buf_both, CL_TRUE, CL_MAP_READ | CL_MAP_WRITE, 0, len * sizeof(int), NULL, &event_dtoh)
-        OCLERR(clfftEnqueueTransform(plan_x_r2c, CLFFT_FORWARD, 1, &queue.object_, 0, NULL, NULL, &buff_in.object_, &buff_out.object_, NULL));
-        queue.finish();
-    }
-    void execute_x_c2r(Array<CT>& in, Array<RT>& out){
-        CT* ptr_in = in.ptr;
-        RT* ptr_out = out.ptr;
-        if(ptr_in == ptr_out) ERROR("in-place transforms are not supported");
-        cl::Buffer buff_in(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, in.alloc_bytes, ptr_in);
-        cl::Buffer buff_out(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, out.alloc_bytes, ptr_out);
-        OCLERR(clfftEnqueueTransform(plan_x_c2r, CLFFT_BACKWARD, 1, &queue.object_, 0, NULL, NULL, &buff_in.object_, &buff_out.object_, NULL));
-        queue.finish();
-    }
-    void execute_y(Array<CT>& in, Array<CT>& out, clfftDirection dir){
-        CT* ptr_in = in.ptr;
-        CT* ptr_out = out.ptr;
-        if(ptr_in == ptr_out) ERROR("in-place transforms are not supported");
-        cl::Buffer buff_in(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, in.alloc_bytes, ptr_in);
-        cl::Buffer buff_out(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, out.alloc_bytes, ptr_out);
-        OCLERR(clfftEnqueueTransform(plan_y, dir, 1, &queue.object_, 0, NULL, NULL, &buff_in.object_, &buff_out.object_, NULL));
-        queue.finish();
-    }
-    void execute_z(Array<CT>& in, Array<CT>& out, clfftDirection dir){
-        CT* ptr_in = in.ptr;
-        CT* ptr_out = out.ptr;
-        if(ptr_in == ptr_out) ERROR("in-place transforms are not supported");
-        cl::Buffer buff_in(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, in.alloc_bytes, ptr_in);
-        cl::Buffer buff_out(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, out.alloc_bytes, ptr_out);
-        OCLERR(clfftEnqueueTransform(plan_z, dir, 1, &queue.object_, 0, NULL, NULL, &buff_in.object_, &buff_out.object_, NULL));
-        queue.finish();
-    }
-};
-/*
-    void r2c(std::string in, std::string out){
-        void* in_ptr = get_array(in);
-        void* out_ptr = get_array(out);
-        void* im_ptr = get_array("intermediate");
-        int ttype = 0;
+        cl::Buffer buff_interm(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, out.alloc_bytes, ptr_interm);
+        if((void*)ptr_in == (void*)ptr_out) ERROR("in-place transforms are not supported");
+        if(in.pt != Array<RT>::XD) ERROR("wrong decomposition on input");
+        if(out.pt != Array<CT>::ZD) ERROR("wrong decomposition on input");
 
         // x - fft
-        //
-
+        //execute_x_r2c(&buff_in.object_, &buff_out.object_);
         // x -> y
-        ttype = 1;
-        __iop_MOD_iop_transpose(&ttype, &in_ptr, xsize, &out_ptr, ysize);
-
+        interm.set_y_pencil();
+        out.set_x_pencil();
+        out.transpose_into(interm);
         // y - fft
-        //
-
+        //execute_y(&buff_interm.object_, &buff_out.object_, CLFFT_FORWARD);
         // y -> z
-        ttype = 2;
-        __iop_MOD_iop_transpose(&ttype, &in_ptr, xsize, &out_ptr, ysize);
-
+        out.set_y_pencil();
+        interm.set_z_pencil();
+        out.transpose_into(interm);
         // z - fft
-        //
+        //execute_z(&buff_interm.object_, &buff_out.object_, CLFFT_FORWARD);
+        out.set_z_pencil();
     }
-    void c2r(std::string in, std::string out){
-        void* in_ptr = get_array(in);
-        void* out_ptr = get_array(out);
-        void* im_ptr = get_array("intermediate");
-        int ttype = 0;
+    void c2r(Array<CT>& in, Array<RT>& out){
+        CT* ptr_in = in.ptr;
+        RT* ptr_out = out.ptr;
+        CT* ptr_interm = interm.ptr;
+        cl::Buffer buff_in(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, in.alloc_bytes, ptr_in);
+        cl::Buffer buff_out(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, out.alloc_bytes, ptr_out);
+        cl::Buffer buff_interm(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, out.alloc_bytes, ptr_interm);
+        if((void*)ptr_in == (void*)ptr_out) ERROR("in-place transforms are not supported");
+        if(in.pt != Array<CT>::ZD) ERROR("wrong decomposition on input");
+        if(out.pt != Array<RT>::XD) ERROR("wrong decomposition on input");
 
         // z - ifft
-        //
-
+        //execute_z(&buff_in.object_, &buff_interm.object_, CLFFT_BACKWARD);
         // z -> y
-        ttype = 3;
-        __iop_MOD_iop_transpose(&ttype, &in_ptr, xsize, &out_ptr, ysize);
-
+        interm.set_z_pencil();
+        in.set_y_pencil();
+        interm.transpose_into(in);
         // y - ifft
-        //
-
+        //execute_y(&buff_in.object_, &buff_interm.object_, CLFFT_BACKWARD);
         // y -> x
-        ttype = 4;
-        __iop_MOD_iop_transpose(&ttype, &in_ptr, xsize, &out_ptr, ysize);
-
+        interm.set_y_pencil();
+        in.set_x_pencil();
+        interm.transpose_into(in);
         // x - ifft
-        //
+        //execute_x_c2r(&buff_in.object_, &buff_out.object_);
+        in.set_z_pencil();
     }
 };
-*/
 
 #ifdef SINGLEFLOAT
 typedef float Float;
 #else
 typedef double Float;
 #endif
+typedef std::complex<Float> Complex;
 
 void init_array(const int& gi0, const int& gi1, const int& gi2, Float& v){ v = gi0; }
 //void init_array(const int& gi0, const int& gi1, const int& gi2, Float& v){ v = gi1; }
@@ -404,7 +399,7 @@ int main(int argc, char* argv[]){
     int3 real_shape = {8, 8, 8};
     int3 cmpl_shape = to_hermitian(real_shape);
 
-    Bookkeeping bk(0, Bookkeeping::CPU, real_shape);
+    Bookkeeping<Float> bk(0, CL_DEVICE_TYPE_CPU, real_shape);
 
     DecompInfo decomp_real(real_shape);
     DecompInfo decomp_cmpl(cmpl_shape);
@@ -412,37 +407,22 @@ int main(int argc, char* argv[]){
     std::cout << decomp_real << std::endl;
     std::cout << decomp_cmpl << std::endl;
 
-    Array<Float> arr(decomp_real);
+    Array<Float> arr1(decomp_real);
+    Array<Complex> arr2(decomp_cmpl);
+    arr2.set_z_pencil();
+
+    arr1.over(init_array);
+    arr2.over(init_cmpl_array);
+
+    arr1.save("real.bin");
+    arr2.save("cmpl.bin");
 
     DistributedFFT<Float> fft(bk.context, bk.queue, decomp_real, decomp_cmpl);
 
-/*
-    DistributedFFT<Float> fft(8, 8, 8);
-    fft.add_array("real_arr");
-    fft.over_real("real_arr", init_array);
-    fft.save_real("real_arr", "rout.bin");
+    fft.r2c(arr1, arr2);
+    fft.c2r(arr2, arr1);
 
-    fft.add_array("cmpl_arr");
-    fft.add_array("cmpl_arr_2");
-    fft.over_cmpl("cmpl_arr", init_cmpl_array);
-    fft.save_cmpl("cmpl_arr", "cout.bin", 1);
-
-    void* in_ptr = fft.get_array("cmpl_arr");
-    void* out_ptr = fft.get_array("cmpl_arr_2");
-    //void* im_ptr = fft.get_array("intermediate");
-    int ttype = 0;
-
-    ttype = 1;
-    __iop_MOD_iop_transpose(&ttype, &in_ptr, fft.xsize, &out_ptr, fft.ysize);
-    //ttype = 4;
-    //__iop_MOD_iop_transpose(&ttype, &out_ptr, fft.ysize, &in_ptr, fft.xsize);
-    //fft.save_cmpl("cmpl_arr", "c2out.bin", 1);
-    fft.save_cmpl("cmpl_arr_2", "c2out.bin", 2);
-
-
-    //fft.r2c("real_arr", "cmpl_arr");
-    //fft.c2r("cmpl_arr", "real_arr");
-    */
+    std::cerr << "program terminating" << std::endl;
 
     return EXIT_SUCCESS;
 }
