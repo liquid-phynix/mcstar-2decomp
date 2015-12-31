@@ -32,6 +32,9 @@ std::ostream& operator<<(std::ostream& os, const int3& i3){
     os << "(" << i3.x << "," << i3.y << "," << i3.z << ")";
     return os;
 }
+void int3_to_shape(size_t shape[3], int3 i3){
+    shape[0] = i3.x; shape[1] = i3.y; shape[2] = i3.z;
+}
 
 template<typename RT>
 class Bookkeeping {
@@ -169,7 +172,7 @@ class Array {
 public:
     enum PencilType {XD = 1, YD, ZD};
     PencilType pt;
-    int alloc_bytes;
+    size_t alloc_bytes;
     F* ptr;
     const DecompInfo di;
 public:
@@ -252,38 +255,38 @@ public:
     DistributedFFT(cl::Context& _context, cl::CommandQueue& _queue, const DecompInfo& _di_real, const DecompInfo& _di_cmpl):
         context(_context), queue(_queue), di_real(_di_real), di_cmpl(_di_cmpl), interm(_di_cmpl){
 
-        size_t shape[3] = {};
+        size_t shape[3];
         // plan_x_r2c: INPUT REAL X-stencil, OUTPUT CMPL X-stencil
-        shape = {di_real.xsize.x, di_real.xsize.y, di_real.xsize.z};
+        int3_to_shape(shape, {di_real.xsize.x, di_real.xsize.y, di_real.xsize.z});
         OCLERR(clfftCreateDefaultPlan(&plan_x_r2c, context.object_, CLFFT_1D, shape));
         // STRIDES
-        shape = {1, di_real.xsize.x, di_real.xsize.x * di_real.xsize.y};
+        int3_to_shape(shape, {1, di_real.xsize.x, di_real.xsize.x * di_real.xsize.y});
         OCLERR(clfftSetPlanInStride(plan_x_r2c, CLFFT_3D, shape));
-        shape = {1, di_cmpl.xsize.x, di_cmpl.xsize.x * di_cmpl.xsize.y};
+        int3_to_shape(shape, {1, di_cmpl.xsize.x, di_cmpl.xsize.x * di_cmpl.xsize.y});
         OCLERR(clfftSetPlanOutStride(plan_x_r2c, CLFFT_3D, shape));
 
         // plan_x_c2r: INPUT CMPL X-stencil, OUTPUT REAL X-stencil
-        shape = {di_cmpl.xsize.x, di_cmpl.xsize.y, di_cmpl.xsize.z};
+        int3_to_shape(shape, {di_cmpl.xsize.x, di_cmpl.xsize.y, di_cmpl.xsize.z});
         OCLERR(clfftCreateDefaultPlan(&plan_x_c2r, context.object_, CLFFT_1D, shape));
         // STRIDES
-        shape = {1, di_cmpl.xsize.x, di_cmpl.xsize.x * di_cmpl.xsize.y};
+        int3_to_shape(shape, {1, di_cmpl.xsize.x, di_cmpl.xsize.x * di_cmpl.xsize.y});
         OCLERR(clfftSetPlanInStride(plan_x_c2r, CLFFT_3D, shape));
-        shape = {1, di_real.xsize.x, di_real.xsize.x * di_real.xsize.y};
+        int3_to_shape(shape, {1, di_real.xsize.x, di_real.xsize.x * di_real.xsize.y});
         OCLERR(clfftSetPlanOutStride(plan_x_c2r, CLFFT_3D, shape));
 
         // plan_y: INPUT CMPL Y-stencil, OUTPUT CMPL Y-stencil - FFT along dim Y
-        shape = {di_cmpl.ysize.y, di_cmpl.ysize.x, di_cmpl.ysize.z};
+        int3_to_shape(shape, {di_cmpl.ysize.y, di_cmpl.ysize.x, di_cmpl.ysize.z});
         OCLERR(clfftCreateDefaultPlan(&plan_y,     context.object_, CLFFT_1D, shape));
         // STRIDES
-        shape = {di_cmpl.ysize.x, 1, di_cmpl.ysize.x * di_cmpl.ysize.y};
+        int3_to_shape(shape, {di_cmpl.ysize.x, 1, di_cmpl.ysize.x * di_cmpl.ysize.y});
         OCLERR(clfftSetPlanInStride(plan_y,  CLFFT_3D, shape));
         OCLERR(clfftSetPlanOutStride(plan_y, CLFFT_3D, shape));
 
         // plan_z: INPUT CMPL Z-stencil, OUTPUT CMPL Z-stencil
-        shape = {di_cmpl.zsize.z, di_cmpl.zsize.x, di_cmpl.zsize.y};
+        int3_to_shape(shape, {di_cmpl.zsize.z, di_cmpl.zsize.x, di_cmpl.zsize.y});
         OCLERR(clfftCreateDefaultPlan(&plan_z,     context.object_, CLFFT_1D, shape));
         // STRIDES
-        shape = {di_cmpl.zsize.x * di_cmpl.zsize.y, 1, di_cmpl.zsize.x};
+        int3_to_shape(shape, {di_cmpl.zsize.x * di_cmpl.zsize.y, 1, di_cmpl.zsize.x});
         OCLERR(clfftSetPlanInStride(plan_y,  CLFFT_3D, shape));
         OCLERR(clfftSetPlanOutStride(plan_y, CLFFT_3D, shape));
 
@@ -326,13 +329,13 @@ public:
         queue.finish();
     }
     void r2c(Array<RT>& in, Array<CT>& out){
-        RT* ptr_in = in.ptr;
-        CT* ptr_out = out.ptr;
-        CT* ptr_interm = interm.ptr;
+        void* ptr_in = in.ptr;
+        void* ptr_out = out.ptr;
+        void* ptr_interm = interm.ptr;
         cl::Buffer buff_in(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, in.alloc_bytes, ptr_in);
         cl::Buffer buff_out(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, out.alloc_bytes, ptr_out);
         cl::Buffer buff_interm(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, out.alloc_bytes, ptr_interm);
-        if((void*)ptr_in == (void*)ptr_out) ERROR("in-place transforms are not supported");
+        if(ptr_in == ptr_out) ERROR("in-place transforms are not supported");
         if(in.pt != Array<RT>::XD) ERROR("wrong decomposition on input");
         if(out.pt != Array<CT>::ZD) ERROR("wrong decomposition on input");
 
@@ -353,13 +356,13 @@ public:
         out.set_z_pencil();
     }
     void c2r(Array<CT>& in, Array<RT>& out){
-        CT* ptr_in = in.ptr;
-        RT* ptr_out = out.ptr;
-        CT* ptr_interm = interm.ptr;
+        void* ptr_in = in.ptr;
+        void* ptr_out = out.ptr;
+        void* ptr_interm = interm.ptr;
         cl::Buffer buff_in(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, in.alloc_bytes, ptr_in);
         cl::Buffer buff_out(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, out.alloc_bytes, ptr_out);
         cl::Buffer buff_interm(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, out.alloc_bytes, ptr_interm);
-        if((void*)ptr_in == (void*)ptr_out) ERROR("in-place transforms are not supported");
+        if(ptr_in == ptr_out) ERROR("in-place transforms are not supported");
         if(in.pt != Array<CT>::ZD) ERROR("wrong decomposition on input");
         if(out.pt != Array<RT>::XD) ERROR("wrong decomposition on input");
 

@@ -58,15 +58,21 @@ CONTAINS
   config = [di%xst-1, di%xen-1, di%xsz, di%yst-1, di%yen-1, di%ysz, di%zst-1, di%zen-1, di%zsz]
  END SUBROUTINE
 
- SUBROUTINE save_array(array_ptr, elem_size, decomp_info_index, pencil_kind, fn_ptr, fn_len) BIND(C)
+ SUBROUTINE save_array(array_ptr, elem_size, decomp_info_index, pencil_kind, fn, fn_len) BIND(C)
   INTEGER(c_int), VALUE :: elem_size, decomp_info_index, pencil_kind, fn_len
-  TYPE(c_ptr), VALUE :: array_ptr, fn_ptr
+  TYPE(c_ptr), VALUE :: array_ptr
+  CHARACTER(1, KIND=c_char), INTENT(IN) :: fn(fn_len)
+  CHARACTER(fn_len, KIND=c_char) :: fnfort
   REAL(mytype), POINTER :: array_real(:,:,:)
   COMPLEX(mytype), POINTER :: array_cmpl(:,:,:)
-  CHARACTER(KIND=c_char, LEN=fn_len), POINTER :: fn
   TYPE(decomp_info) :: di
+  INTEGER :: i
+
+  do i=1,size(fn)
+   fnfort(i:i)=fn(i)
+  end do
+
   di = decomp_info_table(decomp_info_index)
-  CALL c_f_pointer(fn_ptr, fn, [fn_len])
   SELECT CASE (elem_size / mytype_bytes)
   CASE (1) ! real elements
    SELECT CASE (pencil_kind)
@@ -79,7 +85,7 @@ CONTAINS
    CASE DEFAULT
     STOP "'save_array/real': cannot happen"
    END SELECT
-  CALL decomp_2d_write_one(pencil_kind, array_real, fn, di)
+  CALL decomp_2d_write_one(pencil_kind, array_real, fnfort, di)
   CASE (2) ! complex elements
    SELECT CASE (pencil_kind)
    CASE (1)
@@ -91,12 +97,12 @@ CONTAINS
    CASE DEFAULT
     STOP "'save_array/cmpl': cannot happen"
    END SELECT
-  CALL decomp_2d_write_one(pencil_kind, array_cmpl, fn, di)
+  CALL decomp_2d_write_one(pencil_kind, array_cmpl, fnfort, di)
   CASE DEFAULT
    STOP "'save_array/size': cannot happen"
   END SELECT
   IF (nrank .EQ. 0) THEN
-      WRITE(*,*) 'written file <', fn, '>'
+      WRITE(*,*) 'written file <', fnfort, '>'
   END IF
  END SUBROUTINE
 
