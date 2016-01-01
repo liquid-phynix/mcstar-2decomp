@@ -56,6 +56,9 @@ CONTAINS
   rank = nrank
   table_index = SIZE(decomp_info_table)
   config = [di%xst-1, di%xen-1, di%xsz, di%yst-1, di%yen-1, di%ysz, di%zst-1, di%zen-1, di%zsz]
+  !WRITE (*,*) 'fort: rank ', nrank, ' xsize ', di%xsz
+  !WRITE (*,*) 'fort: rank ', nrank, ' ysize ', di%ysz
+  !WRITE (*,*) 'fort: rank ', nrank, ' zsize ', di%zsz
  END SUBROUTINE
 
  SUBROUTINE save_array(array_ptr, elem_size, decomp_info_index, pencil_kind, fn, fn_len) BIND(C)
@@ -117,7 +120,7 @@ CONTAINS
     CALL c_f_pointer(in_ptr, array_in, di%xsz)
     IF (out_pencil .EQ. 2) THEN ! to y
      CALL c_f_pointer(out_ptr, array_out, di%ysz)
-     CALL transpose_x_to_y(array_in, array_out)
+     CALL transpose_x_to_y(array_in, array_out, di)
     ELSE
      WRITE(*,*) 'global_transposition: in-pencil: ', in_pencil, ', out-pencil: ', out_pencil
      STOP "wrong transposition"
@@ -126,10 +129,10 @@ CONTAINS
     CALL c_f_pointer(in_ptr, array_in, di%ysz)
     IF (out_pencil .EQ. 1) THEN ! to x
      CALL c_f_pointer(out_ptr, array_out, di%xsz)
-     CALL transpose_y_to_x(array_in, array_out)
+     CALL transpose_y_to_x(array_in, array_out, di)
     ELSEIF (out_pencil .EQ. 3) THEN ! to z
      CALL c_f_pointer(out_ptr, array_out, di%zsz)
-     CALL transpose_y_to_z(array_in, array_out)
+     CALL transpose_y_to_z(array_in, array_out, di)
     ELSE
      WRITE(*,*) 'global_transposition: in-pencil: ', in_pencil, ', out-pencil: ', out_pencil
      STOP "wrong transposition"
@@ -138,7 +141,7 @@ CONTAINS
     CALL c_f_pointer(in_ptr, array_in, di%zsz)
     IF (out_pencil .EQ. 2) THEN ! to y
      CALL c_f_pointer(out_ptr, array_out, di%ysz)
-     CALL transpose_z_to_y(array_in, array_out)
+     CALL transpose_z_to_y(array_in, array_out, di)
     ELSE
      WRITE(*,*) 'global_transposition: in-pencil: ', in_pencil, ', out-pencil: ', out_pencil
      STOP "wrong transposition"

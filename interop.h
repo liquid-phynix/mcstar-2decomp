@@ -1,3 +1,5 @@
+#pragma once
+
 extern "C" {
     void get_float_size(int*);
     void initialize(int*, int*);
