@@ -58,7 +58,7 @@ int main(int argc, char* argv[]){
         tm.stop();
     }
 
-    if(bk.rank == 0) printf("on average a round of fft took %f ms\n");
+    if(bk.rank == 0) tm.report_avg_ms("on average a round of fft took %f ms\n");
     if(bk.rank == 0) std::cerr << "program terminating" << std::endl;
 
     return EXIT_SUCCESS;
