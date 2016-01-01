@@ -26,8 +26,8 @@ void init_array(const int& gi0, const int& gi1, const int& gi2, Float& v){ v = g
 void init_cmpl_array(const int& gi0, const int& gi1, const int& gi2, std::complex<Float>& v){ v = {Float(gi0), Float(gi1)}; }
 
 int main(int argc, char* argv[]){
-    //int3 real_shape = {80, 80, 80};
-    int3 real_shape = {512, 512, 512};
+    int3 real_shape = {80, 80, 80};
+    //int3 real_shape = {512, 512, 512};
     int3 cmpl_shape = to_hermitian(real_shape);
     Bookkeeping<Float> bk(real_shape);
     if(bk.rank == 0) std::cout << "complex shape = " << cmpl_shape << std::endl;
@@ -39,11 +39,15 @@ int main(int argc, char* argv[]){
 
     Array<Float> arr_real(decomp_real);
     Array<Complex> arr_cmpl(decomp_cmpl);
-
-    DistributedFFT<typename FFTW::FFT<Float> > fft(decomp_real, decomp_cmpl, arr_real, arr_cmpl);
+    arr_cmpl.set_z_pencil();
 
     arr_real.over(init_array);
     arr_cmpl.over(init_cmpl_array);
+
+    DistributedFFT<typename FFTW::FFT<Float> > fft(decomp_real, decomp_cmpl, arr_real, arr_cmpl);
+
+    fft.r2c();
+    fft.c2r();
 
      if(bk.rank == 0) std::cerr << "program terminating" << std::endl;
 
