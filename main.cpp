@@ -12,6 +12,7 @@
 #include "bookkeeping.hpp"
 #include "decomp.hpp"
 #include "dfft.hpp"
+#include "timing.hpp"
 
 #ifdef SINGLEFLOAT
 typedef float Float;
@@ -26,8 +27,11 @@ void init_array(const int& gi0, const int& gi1, const int& gi2, Float& v){ v = g
 void init_cmpl_array(const int& gi0, const int& gi1, const int& gi2, std::complex<Float>& v){ v = {Float(gi0), Float(gi1)}; }
 
 int main(int argc, char* argv[]){
-    int3 real_shape = {80, 80, 80};
-    //int3 real_shape = {512, 512, 512};
+    int3 real_shape;
+    if(argc == 4){
+        real_shape = {atoi(argv[1]), atoi(argv[2]), atoi(argv[2])};
+    }
+    else real_shape = {80, 80, 80};
     int3 cmpl_shape = to_hermitian(real_shape);
     Bookkeeping<Float> bk(real_shape);
     if(bk.rank == 0) std::cout << "complex shape = " << cmpl_shape << std::endl;
@@ -46,10 +50,16 @@ int main(int argc, char* argv[]){
 
     DistributedFFT<typename FFTW::FFT<Float> > fft(decomp_real, decomp_cmpl, arr_real, arr_cmpl);
 
-    fft.r2c();
-    fft.c2r();
+    TimeAcc tm;
+    for(int it = 1; it <= 10; it++){
+        tm.start();
+        fft.r2c();
+        fft.c2r();
+        tm.stop();
+    }
 
-     if(bk.rank == 0) std::cerr << "program terminating" << std::endl;
+    if(bk.rank == 0) printf("on average a round of fft took %f ms\n");
+    if(bk.rank == 0) std::cerr << "program terminating" << std::endl;
 
     return EXIT_SUCCESS;
 }
