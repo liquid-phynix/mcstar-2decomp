@@ -11,14 +11,15 @@ namespace FFTW {
 #include <fftw3.h>
     template <typename F> class FFT {
     protected:
-        typedef F  RT;
+        typedef F                RT;
         typedef std::complex<RT> CT;
     private:
         FPREF(plan) plan_x_r2c, plan_x_c2r, plan_y_forw, plan_y_back, plan_z_forw, plan_z_back;
     public:
-        FFT(DecompInfo real, DecompInfo cmpl, RT* real_ptr, CT* _cmpl_ptr){
+        FFT(DecompInfo real, DecompInfo cmpl, RT* real_ptr, CT* _cmpl_ptr, CT* _cmpl_ptr_im){
             if(sizeof(FPREF(complex)) != sizeof(CT)) ERROR("main() and fftw float types differ");
             FPREF(complex)* cmpl_ptr = reinterpret_cast<FPREF(complex)*>(_cmpl_ptr);
+            FPREF(complex)* cmpl_ptr_im = reinterpret_cast<FPREF(complex)*>(_cmpl_ptr_im);
             FPREF(iodim) transform, repeat[3];
             int transform_rank, repeat_rank; int real_array_size[3]; int array_size[3];
 
@@ -54,8 +55,8 @@ namespace FFTW {
             repeat_rank = 2;             // 2D repetition
             repeat[0].n = array_size[0]; repeat[0].is = repeat[0].os = array_size[2] * array_size[1];
             repeat[1].n = array_size[2]; repeat[1].is = repeat[1].os = 1;
-            plan_y_forw = FPREF(plan_guru_dft)(transform_rank, &transform, repeat_rank, repeat, cmpl_ptr, cmpl_ptr, FFTW_FORWARD, FFTW_ESTIMATE);
-            plan_y_back = FPREF(plan_guru_dft)(transform_rank, &transform, repeat_rank, repeat, cmpl_ptr, cmpl_ptr, FFTW_BACKWARD, FFTW_ESTIMATE);
+            plan_y_forw = FPREF(plan_guru_dft)(transform_rank, &transform, repeat_rank, repeat, cmpl_ptr_im, cmpl_ptr, FFTW_FORWARD, FFTW_ESTIMATE);
+            plan_y_back = FPREF(plan_guru_dft)(transform_rank, &transform, repeat_rank, repeat, cmpl_ptr, cmpl_ptr_im, FFTW_BACKWARD, FFTW_ESTIMATE);
 
             // plan for z-directional decomposition
             // zsize describes the array, extent of dimensions is reversed
@@ -67,8 +68,8 @@ namespace FFTW {
             repeat_rank = 2;             // 2D repetition
             repeat[0].n = array_size[1]; repeat[0].is = repeat[0].os = array_size[2];
             repeat[1].n = array_size[2]; repeat[1].is = repeat[1].os = 1;
-            plan_z_forw = FPREF(plan_guru_dft)(transform_rank, &transform, repeat_rank, repeat, cmpl_ptr, cmpl_ptr, FFTW_FORWARD, FFTW_ESTIMATE);
-            plan_z_back = FPREF(plan_guru_dft)(transform_rank, &transform, repeat_rank, repeat, cmpl_ptr, cmpl_ptr, FFTW_BACKWARD, FFTW_ESTIMATE);
+            plan_z_forw = FPREF(plan_guru_dft)(transform_rank, &transform, repeat_rank, repeat, cmpl_ptr_im, cmpl_ptr, FFTW_FORWARD, FFTW_ESTIMATE);
+            plan_z_back = FPREF(plan_guru_dft)(transform_rank, &transform, repeat_rank, repeat, cmpl_ptr, cmpl_ptr_im, FFTW_BACKWARD, FFTW_ESTIMATE);
         }
         ~FFT(){
             FPREF(destroy_plan)(plan_x_r2c);
@@ -78,5 +79,11 @@ namespace FFTW {
             FPREF(destroy_plan)(plan_z_forw);
             FPREF(destroy_plan)(plan_z_back);
         }
+        void execute_x_r2c(){ FPREF(execute(plan_x_r2c)); }
+        void execute_x_c2r(){ FPREF(execute(plan_x_c2r)); }
+        void execute_y_f(){ FPREF(execute(plan_y_forw)); }
+        void execute_y_b(){ FPREF(execute(plan_y_back)); }
+        void execute_z_f(){ FPREF(execute(plan_z_forw)); }
+        void execute_z_b(){ FPREF(execute(plan_z_back)); }
     };
 }
