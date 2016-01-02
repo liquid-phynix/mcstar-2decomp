@@ -117,11 +117,11 @@ namespace FFTW {
             if(in.realdec != out.realdec or in.cmpldec != out.cmpldec)
                 ERROR("arrays of different decomposition index cannot be transformed");
                    if(in.is_x() and out.is_x() and in.is_cmpl() and out.is_real()){
-                FPREF(execute_dft_c2r(plan_z_back, in.cmpl_ptr(), out.cmpl_ptr()));
+                FPREF(execute_dft_c2r(plan_z_back, in.cmpl_ptr(), out.real_ptr()));
             } else if(in.is_y() and out.is_y() and in.is_cmpl() and out.is_cmpl()){
                 FPREF(execute_dft(plan_y_back, in.cmpl_ptr(), out.cmpl_ptr()));
             } else if(in.is_z() and out.is_z() and in.is_cmpl() and out.is_cmpl()){
-                FPREF(execute_dft(plan_x_c2r, in.cmpl_ptr(), out.real_ptr()));
+                FPREF(execute_dft(plan_x_c2r, in.cmpl_ptr(), out.cmpl_ptr()));
             } else ERROR("array decomposition mismatch in FFT::backward");
         }
     };

@@ -8,12 +8,14 @@ namespace DFFT {
         f.forward(a, b); // x-fft, real -> cmpl
         // STEP 2
         a.as_cmpl(); a.as_y();
+        //std::cerr << "from " << b << " to " << a << std::endl;
         b >> a; // x -> y
         // STEP 3
         b.as_y();
         f.forward(a, b); // y-fft, cmpl -> cmpl
         // STEP 4
         a.as_z();
+        //std::cerr << "from " << b << " to " << a << std::endl;
         b >> a; // y -> z
         // STEP 5
         b.as_z();
@@ -28,12 +30,14 @@ namespace DFFT {
         f.backward(a, b); // z-ifft, cmpl -> cmpl
         // STEP 2
         a.as_y();
+        //std::cerr << "from " << b << " to " << a << std::endl;
         b >> a; // z -> y
         // STEP 3
-        b.set_y();
+        b.as_y();
         f.backward(a, b); // y-ifft, cmpl -> cmpl
         // STEP 4
-        a.set_x();
+        a.as_x();
+        //std::cerr << "from " << b << " to " << a << std::endl;
         b >> a; // y -> x
         // STEP 5
         b.as_real(); b.as_x();

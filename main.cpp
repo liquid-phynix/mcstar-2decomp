@@ -27,7 +27,7 @@ typedef std::complex<Float> Complex;
 typedef FFTW::Array<Float, ArrayDecomp::ArrayDecomp> Array;
 
 void operator>>(Array& from, Array& to){
-    if(not (from.realdec==to.realdec and from.cmpldec==to.cmpldec and from.dectype==to.dectype and from.acctype==to.acctype))
+    if(not (from.realdec==to.realdec and from.cmpldec==to.cmpldec and from.acctype==to.acctype))
         ERROR("arrays cannot be globally transposed");
     if(from.is_real() and to.is_real())
         global_transposition(from.real_ptr(), from.dectype, to.real_ptr(), to.dectype, from.realdec.get_index());
@@ -50,19 +50,19 @@ int main(int argc, char* argv[]){
 
     arrB.as_cmpl();
     arrB.as_z();
-    DFFT::r2c(fft, arrA, arrB);
+    //DFFT::r2c(fft, arrA, arrB);
+    //DFFT::c2r(fft, arrB, arrA);
 
-    //TimeAcc tm;
-    ////for(int it = 1; it <= 10; it++){
-        //tm.start();
-        //fft.r2c();
-        //arr_cmpl.save("intermediate.bin");
-        //fft.c2r();
-        //tm.stop();
-    ////}
+    TimeAcc tm;
+    for(int it = 1; it <= 10; it++){
+        tm.start();
+        DFFT::r2c(fft, arrA, arrB);
+        DFFT::c2r(fft, arrB, arrA);
+        tm.stop();
+    }
     //arr_real.save("output.bin");
 
-    //if(bk.rank == 0) tm.report_avg_ms("on average a round of fft took %f ms\n");
+    if(bk.get_rank() == 0) tm.report_avg_ms("on average a round of fft took %f ms\n");
     //if(bk.rank == 0) std::cerr << "program terminating" << std::endl;
 
     return EXIT_SUCCESS;

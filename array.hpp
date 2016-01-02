@@ -1,6 +1,7 @@
 #pragma once
 #include "utils.hpp"
 #include "decomp.hpp"
+#include <ostream>
 
 namespace ArrayDecomp {
     class ArrayDecomp {
@@ -29,6 +30,7 @@ namespace ArrayDecomp {
         void as_x(){ dectype = XD; }
         void as_y(){ dectype = YD; }
         void as_z(){ dectype = ZD; }
+    friend std::ostream& operator<<(std::ostream&, const ArrayDecomp&);
     protected:
         void save(const char* fn, size_t len, void* source, size_t float_size){
             save_array(source, (acctype==RA ? 1 : 2) * float_size,
@@ -68,4 +70,15 @@ namespace ArrayDecomp {
                                  ptr2++; }}}
     }
     */
+}
+
+std::ostream& operator<<(std::ostream& os, ArrayDecomp::ArrayDecomp& a){
+    char at = '_', dt = '_';
+    if(a.acctype == 1) at = 'R';
+    else if(a.acctype == 2) at = 'C';
+    if(a.dectype == 1) dt = 'X';
+    else if(a.dectype == 2) dt = 'Y';
+    else if(a.dectype == 3) dt = 'Z';
+    os << "<array (" << at << ") elem type and (" << dt << ") decomp type>";
+    return os;
 }
