@@ -109,6 +109,25 @@ CONTAINS
   END IF
  END SUBROUTINE
 
+ !SUBROUTINE write_array(array_ptr, array_shape, array_type, fn)
+  !INTEGER :: elem_size, array_type, array_shape(3)
+  !TYPE(c_ptr) :: array_ptr
+  !CHARACTER(*) :: fn
+  !REAL(mytype), POINTER :: array_real(:,:,:)
+  !COMPLEX(mytype), POINTER :: array_cmpl(:,:,:)
+  !SELECT CASE (array_type)
+  !CASE (1) ! real elements
+   !CALL decomp_2d_write_one(pencil_kind, array_cmpl, fnfort, di)
+  !CASE (2) ! cmpl elements
+   !CALL decomp_2d_write_one(pencil_kind, array_cmpl, fnfort, di)
+  !CASE DEFAULT
+   !STOP "write_array: cannot happen"
+  !END SELECT
+  !IF (nrank .EQ. 0) THEN
+   !WRITE(*,*) 'written file <', fn, '>'
+  !END IF
+ !END SUBROUTINE
+
  SUBROUTINE global_transposition(in_ptr, in_pencil, out_ptr, out_pencil, decomp_info_index) BIND(C)
   TYPE(c_ptr), VALUE :: in_ptr, out_ptr
   INTEGER(c_int), VALUE :: in_pencil, out_pencil, decomp_info_index

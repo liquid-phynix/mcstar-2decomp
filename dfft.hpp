@@ -1,47 +1,43 @@
 #pragma once
-#include "fft-fftw.hpp"
 
-template<class FFT>
-class DistributedFFT {
-    FFT fft;
-    Array<typename FFT::CT>  ia;
-    Array<typename FFT::RT>& ra;
-    Array<typename FFT::CT>& ca;
-public:
-    DistributedFFT(DecompInfo rd, DecompInfo cd, Array<typename FFT::RT>& _ra, Array<typename FFT::CT>& _ca):
-    fft(rd, cd), ia(cd), ra(_ra), ca(_ca){ fft.init(ra.ptr, ca.ptr, ia.ptr); }
-    void r2c(){
-        // x - fft
-        fft.execute_x_r2c();
-        // x -> y
-        ia.set_y_pencil();
-        ca.set_x_pencil();
-        ca.transpose_into(ia);
-        // y - fft
-        fft.execute_y_f();
-        // y -> z
-        ca.set_y_pencil();
-        ia.set_z_pencil();
-        ca.transpose_into(ia);
-        // z - fft
-        fft.execute_z_f();
-        ca.set_z_pencil();
+namespace DFFT {
+    template<typename F, typename A> void r2c(F& f, A& a, A& b){
+        if(not (a.is_real() and b.is_cmpl() and a.is_x() and b.is_z())) ERROR("sanity check failed in r2c()");
+        // STEP 1
+        b.as_x();
+        f.forward(a, b); // x-fft, real -> cmpl
+        // STEP 2
+        a.as_cmpl(); a.as_y();
+        b >> a; // x -> y
+        // STEP 3
+        b.as_y();
+        f.forward(a, b); // y-fft, cmpl -> cmpl
+        // STEP 4
+        a.as_z();
+        b >> a; // y -> z
+        // STEP 5
+        b.as_z();
+        f.forward(a, b); // z-fft, cmpl -> cmpl
+        a.as_real();
+        a.as_x();
     }
-    void c2r(){
-        // z - ifft
-        fft.execute_z_b();
-        // z -> y
-        ia.set_z_pencil();
-        ca.set_y_pencil();
-        ia.transpose_into(ca);
-        // y - ifft
-        fft.execute_y_b();
-        // y -> x
-        ia.set_y_pencil();
-        ca.set_x_pencil();
-        ia.transpose_into(ca);
-        // x - ifft
-        fft.execute_x_c2r();
-        ca.set_z_pencil();
+    template<typename F, typename A> void c2r(F& f, A& a, A& b){
+        if(not (a.is_cmpl() and b.is_real() and a.is_z() and b.is_x())) ERROR("sanity check failed in c2r()");
+        // STEP 1
+        b.as_cmpl(); b.as_z();
+        f.backward(a, b); // z-ifft, cmpl -> cmpl
+        // STEP 2
+        a.as_y();
+        b >> a; // z -> y
+        // STEP 3
+        b.set_y();
+        f.backward(a, b); // y-ifft, cmpl -> cmpl
+        // STEP 4
+        a.set_x();
+        b >> a; // y -> x
+        // STEP 5
+        b.as_real(); b.as_x();
+        f.backward(a, b); // x-ifft, cmpl -> real
+        a.as_z();
     }
 };

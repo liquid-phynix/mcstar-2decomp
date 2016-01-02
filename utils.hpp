@@ -1,4 +1,5 @@
 #pragma once
+#include "timing.hpp"
 
 #define ERROR(msg) { std::fprintf(stderr, "ERR @ %s:%d > %s\n", __FILE__, __LINE__, msg); std::exit(EXIT_FAILURE); }
 
