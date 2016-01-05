@@ -22,7 +22,8 @@ namespace FFTW {
         Array(const Array& from) : Base(from), shape(from.shape){ init(); }
         Array(int3 _shape) : Base(_shape), shape(_shape){ init(); }
         void init(){
-            alloc_len = 2 * std::max(std::max(prod(this->cmpldec.xsize), prod(this->cmpldec.ysize)), prod(this->cmpldec.zsize));
+            alloc_len = 2 * std::max(std::max(this->cmpldec.xsize.prod(), this->cmpldec.ysize.prod()), this->cmpldec.zsize.prod());
+            //alloc_len = 2 * std::max(std::max(prod(this->cmpldec.xsize), prod(this->cmpldec.ysize)), prod(this->cmpldec.zsize));
             alloc_bytes = sizeof(RT) * alloc_len;
             ptr = FPREF(malloc)(alloc_bytes);
             int lock = mlock(ptr, alloc_bytes);
