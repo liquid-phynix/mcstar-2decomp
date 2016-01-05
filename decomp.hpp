@@ -241,7 +241,6 @@ namespace DecompImpl {
                                  ptr2++; }}}
     }
     */
-}
     };
 
     template <typename F, template <class> class B>
