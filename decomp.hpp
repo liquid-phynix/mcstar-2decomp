@@ -165,8 +165,8 @@ namespace DecompImpl {
             HostContextManager() = delete;
             HostContextManager(const HostContextManager&) = default;
             HostContextManager(CT* _ptr) : ptr(_ptr){}
-            RT* cmpl_ptr(){ return reinterpret_cast<RT*>(ptr); }
-            CT* real_ptr(){ return ptr; }
+            CT* cmpl_ptr(){ return ptr; }
+            RT* real_ptr(){ return reinterpret_cast<RT*>(ptr); }
         };
         CT* ptr;
         size_t alloc_bytes;

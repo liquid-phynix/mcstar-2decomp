@@ -11,19 +11,28 @@ namespace DecompWithFFTWImpl {
 #define FPREF(a) fftw_##a
 #endif
 
-    //using namespace DecompImpl;
     using DecompImpl::DecompInfo;
 
-    template <class N>
-    class FFTWDecompArrayBase : N {
-        using typename N::RT;
-        using typename N::CT;
-    protected:
+    template <typename F>
+    class DecompArrayMemoryManager {
+        typedef F               RT;
+        typedef std::complex<F> CT;
+        class HostContextManager {
+            CT* const ptr;
+        public:
+            HostContextManager() = delete;
+            HostContextManager(const HostContextManager&) = default;
+            HostContextManager(CT* _ptr) : ptr(_ptr){}
+            CT* cmpl_ptr(){ return ptr; }
+            RT* real_ptr(){ return reinterpret_cast<RT*>(ptr); }
+            FPREF(complex)* fftw_cmpl_ptr(){ return reinterpret_cast<FPREF(complex)*>(ptr); }
+        };
         CT* ptr;
         size_t alloc_bytes;
     public:
-        FFTWDecompArrayBase() = delete;
-        FFTWDecompArrayBase(DecompInfo cd){
+        DecompArrayMemoryManager() = delete;
+        DecompArrayMemoryManager(const DecompArrayMemoryManager<F>&) = delete;
+        DecompArrayMemoryManager(DecompInfo cd){
             size_t alloc_len = std::max(std::max(cd.xsize.prod(), cd.ysize.prod()), cd.zsize.prod());
             alloc_bytes = sizeof(CT) * alloc_len;
             ptr = (CT*)FPREF(malloc)(alloc_bytes);
@@ -31,14 +40,12 @@ namespace DecompWithFFTWImpl {
             int lock = mlock(ptr, alloc_bytes);
             if(lock) fprintf(stderr, "memory region cannot be pinned\n");
         }
-        ~FFTWDecompArrayBase(){ FPREF(free)(ptr); }
-        RT* real_ptr(){ return reinterpret_cast<RT*>(ptr); }
-        CT* cmpl_ptr(){ return reinterpret_cast<CT*>(ptr); }
-        FPREF(complex)* fftw_cmpl_ptr(){ return reinterpret_cast<FPREF(complex)*>(ptr); }
+        ~DecompArrayMemoryManager(){ FPREF(free)(ptr); }
+        HostContextManager createManager(){ return HostContextManager(ptr); }
     };
 
     template <typename F>
-    using DecompArray = DecompImpl::DecompArray<F, FFTWDecompArrayBase>;
+    using DecompArray = DecompImpl::DecompArray<F, DecompArrayMemoryManager>;
 
     template <typename F>
     class FFTW : public DecompImpl::DistributedFFTBase<F, FFTW<F>> {
@@ -52,6 +59,9 @@ namespace DecompWithFFTWImpl {
             int transform_rank = 1; // transform dimension
             int repeat_rank = 2;    // 2D repetition
             int real_array_size[3]{}; int array_size[3]{};
+
+            auto manA = scratchA.createManager();
+            auto manB = scratchB.createManager();
 
             // plan for x-directional decomposition
             // xsize describes the array, extent of dimensions is reversed
@@ -67,14 +77,14 @@ namespace DecompWithFFTWImpl {
             transform.is = transform.os = 1;
             repeat[0].n = real_array_size[0]; repeat[0].is = real_array_size[1] * real_array_size[2]; repeat[0].os = array_size[1] * array_size[2];
             repeat[1].n = real_array_size[1]; repeat[1].is = real_array_size[2]; repeat[1].os = array_size[2];
-            plan_x_r2c = FPREF(plan_guru_dft_r2c)(transform_rank, &transform, repeat_rank, repeat, scratchA.real_ptr(), scratchB.fftw_cmpl_ptr(), FFTW_DESTROY_INPUT | FFTW_MEASURE);
+            plan_x_r2c = FPREF(plan_guru_dft_r2c)(transform_rank, &transform, repeat_rank, repeat, manA.real_ptr(), manB.fftw_cmpl_ptr(), FFTW_DESTROY_INPUT | FFTW_MEASURE);
 
             //transform.n = array_size[2]; // transform length
             transform.n = real_array_size[2]; // transform length
             transform.is = transform.os = 1;
             repeat[0].n = array_size[0]; repeat[0].is = array_size[1] * array_size[2]; repeat[0].os = real_array_size[1] * real_array_size[2];
             repeat[1].n = array_size[1]; repeat[1].is = array_size[2]; repeat[1].os = real_array_size[2];
-            plan_x_c2r = FPREF(plan_guru_dft_c2r)(transform_rank, &transform, repeat_rank, repeat, scratchA.fftw_cmpl_ptr(), scratchB.real_ptr(), FFTW_DESTROY_INPUT | FFTW_MEASURE);
+            plan_x_c2r = FPREF(plan_guru_dft_c2r)(transform_rank, &transform, repeat_rank, repeat, manA.fftw_cmpl_ptr(), manB.real_ptr(), FFTW_DESTROY_INPUT | FFTW_MEASURE);
 
             // plan for y-directional decomposition
             // ysize describes the array, extent of dimensions is reversed
@@ -86,8 +96,8 @@ namespace DecompWithFFTWImpl {
             transform.is = transform.os = array_size[2];
             repeat[0].n = array_size[0]; repeat[0].is = repeat[0].os = array_size[2] * array_size[1];
             repeat[1].n = array_size[2]; repeat[1].is = repeat[1].os = 1;
-            plan_y_forw = FPREF(plan_guru_dft)(transform_rank, &transform, repeat_rank, repeat, scratchA.fftw_cmpl_ptr(), scratchB.fftw_cmpl_ptr(), FFTW_FORWARD, FFTW_DESTROY_INPUT | FFTW_MEASURE);
-            plan_y_back = FPREF(plan_guru_dft)(transform_rank, &transform, repeat_rank, repeat, scratchA.fftw_cmpl_ptr(), scratchB.fftw_cmpl_ptr(), FFTW_BACKWARD, FFTW_DESTROY_INPUT | FFTW_MEASURE);
+            plan_y_forw = FPREF(plan_guru_dft)(transform_rank, &transform, repeat_rank, repeat, manA.fftw_cmpl_ptr(), manB.fftw_cmpl_ptr(), FFTW_FORWARD, FFTW_DESTROY_INPUT | FFTW_MEASURE);
+            plan_y_back = FPREF(plan_guru_dft)(transform_rank, &transform, repeat_rank, repeat, manA.fftw_cmpl_ptr(), manB.fftw_cmpl_ptr(), FFTW_BACKWARD, FFTW_DESTROY_INPUT | FFTW_MEASURE);
             // plan for z-directional decomposition
             // zsize describes the array, extent of dimensions is reversed
             // so that {slow, medium, fast} follows C convention
@@ -98,8 +108,8 @@ namespace DecompWithFFTWImpl {
             transform.is = transform.os = array_size[1] * array_size[2];
             repeat[0].n = array_size[1]; repeat[0].is = repeat[0].os = array_size[2];
             repeat[1].n = array_size[2]; repeat[1].is = repeat[1].os = 1;
-            plan_z_forw = FPREF(plan_guru_dft)(transform_rank, &transform, repeat_rank, repeat, scratchA.fftw_cmpl_ptr(), scratchB.fftw_cmpl_ptr(), FFTW_FORWARD, FFTW_DESTROY_INPUT | FFTW_MEASURE);
-            plan_z_back = FPREF(plan_guru_dft)(transform_rank, &transform, repeat_rank, repeat, scratchA.fftw_cmpl_ptr(), scratchB.fftw_cmpl_ptr(), FFTW_BACKWARD, FFTW_DESTROY_INPUT | FFTW_MEASURE);
+            plan_z_forw = FPREF(plan_guru_dft)(transform_rank, &transform, repeat_rank, repeat, manA.fftw_cmpl_ptr(), manB.fftw_cmpl_ptr(), FFTW_FORWARD, FFTW_DESTROY_INPUT | FFTW_MEASURE);
+            plan_z_back = FPREF(plan_guru_dft)(transform_rank, &transform, repeat_rank, repeat, manA.fftw_cmpl_ptr(), manB.fftw_cmpl_ptr(), FFTW_BACKWARD, FFTW_DESTROY_INPUT | FFTW_MEASURE);
         }
         ~FFTW(){
             FPREF(destroy_plan)(plan_x_r2c);
@@ -110,25 +120,29 @@ namespace DecompWithFFTWImpl {
             FPREF(destroy_plan)(plan_z_back);
         }
         void forward(DecompArray<F>& in, DecompArray<F>& out){
+            auto manIn = in.createManager();
+            auto manOut = out.createManager();
             if(in.realdec != out.realdec or in.cmpldec != out.cmpldec)
                 ERROR("arrays of different decomposition index cannot be transformed");
                    if(in.is_x() and out.is_x() and in.is_real() and out.is_cmpl()){
-                FPREF(execute_dft_r2c(plan_x_r2c, in.real_ptr(), out.fftw_cmpl_ptr()));
+                FPREF(execute_dft_r2c(plan_x_r2c, manIn.real_ptr(), manOut.fftw_cmpl_ptr()));
             } else if(in.is_y() and out.is_y() and in.is_cmpl() and out.is_cmpl()){
-                FPREF(execute_dft(plan_y_forw, in.fftw_cmpl_ptr(), out.fftw_cmpl_ptr()));
+                FPREF(execute_dft(plan_y_forw, manIn.fftw_cmpl_ptr(), manOut.fftw_cmpl_ptr()));
             } else if(in.is_z() and out.is_z() and in.is_cmpl() and out.is_cmpl()){
-                FPREF(execute_dft(plan_z_forw, in.fftw_cmpl_ptr(), out.fftw_cmpl_ptr()));
+                FPREF(execute_dft(plan_z_forw, manIn.fftw_cmpl_ptr(), manOut.fftw_cmpl_ptr()));
             } else ERROR("array decomposition mismatch in FFT::forward");
         }
         void backward(DecompArray<F>& in, DecompArray<F>& out){
+            auto manIn = in.createManager();
+            auto manOut = out.createManager();
             if(in.realdec != out.realdec or in.cmpldec != out.cmpldec)
                 ERROR("arrays of different decomposition index cannot be transformed");
                    if(in.is_x() and out.is_x() and in.is_cmpl() and out.is_real()){
-                FPREF(execute_dft_c2r(plan_x_c2r, in.fftw_cmpl_ptr(), out.real_ptr()));
+                FPREF(execute_dft_c2r(plan_x_c2r, manIn.fftw_cmpl_ptr(), manOut.real_ptr()));
             } else if(in.is_y() and out.is_y() and in.is_cmpl() and out.is_cmpl()){
-                FPREF(execute_dft(plan_y_back, in.fftw_cmpl_ptr(), out.fftw_cmpl_ptr()));
+                FPREF(execute_dft(plan_y_back, manIn.fftw_cmpl_ptr(), manOut.fftw_cmpl_ptr()));
             } else if(in.is_z() and out.is_z() and in.is_cmpl() and out.is_cmpl()){
-                FPREF(execute_dft(plan_z_back, in.fftw_cmpl_ptr(), out.fftw_cmpl_ptr()));
+                FPREF(execute_dft(plan_z_back, manIn.fftw_cmpl_ptr(), manOut.fftw_cmpl_ptr()));
             } else ERROR("array decomposition mismatch in FFT::backward");
         }
     };
