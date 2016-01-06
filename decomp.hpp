@@ -3,15 +3,17 @@
 #include <sys/mman.h>
 #include <string>
 #include <complex>
+#include <random>
 #include "interop.h"
 #include "utils.hpp"
 
 namespace DecompImpl {
 
     template<typename RT> class Bookkeeping {
-        int size, rank;
+        int size, rank, seed;
         int id_within_node, node_size;
     public:
+        int get_seed() const { return seed; }
         int get_size() const { return size; }
         int get_rank() const { return rank; }
         int get_id_within_node() const { return id_within_node; }
@@ -20,6 +22,14 @@ namespace DecompImpl {
             MPI::Init();
             size = MPI::COMM_WORLD.Get_size();
             rank = MPI::COMM_WORLD.Get_rank();
+
+            std::random_device rd;
+            srand(rd());
+            srand(rd() * rand());
+            srand(rd() * rand());
+            seed = rand();
+            srand(seed);
+
             char pname[MPI_MAX_PROCESSOR_NAME]{};
             int pnamelen;
             MPI::Get_processor_name(pname, pnamelen);
@@ -276,7 +286,6 @@ namespace DecompImpl {
                 ERROR("sanity check failed in r2c()");
             // STEP 1
             static_cast<Derived*>(this)->forward(a, b.as_x()); // x-fft, real -> cmpl
-            return;
             // STEP 2
             //std::cerr << "from " << b << " to " << a << std::endl;
             b >> a.as_cmpl().as_y(); // x -> y

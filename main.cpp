@@ -31,26 +31,22 @@ int main(int argc, char* argv[]){
 
     Bookkeeping<Float> bk(gshape);
 
-    //DecompArray<Float> arrA(gshape);
-    //DecompArray<Float> arrB(arrA);
     DecompArray<Float> arrA(gshape);
     DecompArray<Float> arrB(arrA);
-    arrA.as_cmpl();
-    arrB.as_cmpl();
+    DistributedFFT<Float> fft(arrA, arrB);
 
-    arrA.over<Complex>([](const int& gi0, const int& gi1, const int& gi2, Complex& v){
-        v = {Float(rand() / Float(RAND_MAX)), Float(rand() / Float(RAND_MAX))}; });
-    arrA.save("cmpl_x.bin");
-    arrA >> arrB.as_y();
-    arrB.save("cmpl_y.bin");
-    arrB >> arrA.as_z();
-    arrA.save("cmpl_z.bin");
-    arrA >> arrB;
-    arrB.save("cmpl_y2.bin");
-    arrB >> arrA.as_x();
-    arrA.save("cmpl_x2.bin");
+    arrA.over<Float>([](const int& gi0, const int& gi1, const int& gi2, Float& v){
+        v = Float(rand() / Float(RAND_MAX)); });
+    arrA.save("real.bin");
+    arrB.as_cmpl().as_z();
+    fft.r2c(arrA, arrB);
+    arrB.save("cmpl.bin");
+    fft.c2r(arrB, arrA);
+    arrA.save("real_back.bin");
 
-    //DistributedFFT<Float> fft(arrA, arrB);
+    //arrA.over<Complex>([](const int& gi0, const int& gi1, const int& gi2, Complex& v){
+        //v = {Float(rand() / Float(RAND_MAX)), Float(rand() / Float(RAND_MAX))}; });
+
 
     //arrA.as_cmpl().as_z();
     //arrB.as_cmpl().as_z();
