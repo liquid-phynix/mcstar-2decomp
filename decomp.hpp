@@ -18,6 +18,8 @@ namespace DecompImpl {
         int get_rank() const { return rank; }
         int get_id_within_node() const { return id_within_node; }
         int get_node_size() const { return node_size; }
+        Bookkeeping() = delete;
+        Bookkeeping(const Bookkeeping<RT>&) = delete;
         Bookkeeping(int3 gshape){
             MPI::Init();
             size = MPI::COMM_WORLD.Get_size();
@@ -92,10 +94,9 @@ namespace DecompImpl {
             int* lens{};
             if(rank == 0) lens = new int[size];
             MPI::COMM_WORLD.Gather(&len, 1, MPI_INT, lens, 1, MPI_INT, 0);
-            for(int id = 0; id < size; id++){
-                if(lens[id] != len) ERROR("len parameter in check_if_homogeneous is non-homogeneous");
-            }
-            delete[] lens;
+            if(rank == 0)
+                for(int id = 0; id < size; id++)
+                    if(lens[id] != len) ERROR("len parameter in check_if_homogeneous is non-homogeneous");
 
             char* bigstring{};
             if(rank == 0) bigstring = new char[size * len];
@@ -110,9 +111,9 @@ namespace DecompImpl {
                 }
                 for(int id = 0; id < size; id++){ lens[id] = check; }
             }
-            delete[] bigstring;
             int ret;
             MPI::COMM_WORLD.Scatter(lens, 1, MPI_INT, &ret, 1, MPI_INT, 0);
+            delete[] lens, bigstring;
             return ret;
         }
         ~Bookkeeping(){ finalize(); MPI::Finalize(); }
@@ -152,36 +153,38 @@ namespace DecompImpl {
         os << "z-pencil from " << di.zstart << "\tto " << di.zend << ",\tsize " << di.zsize << "\n";
         return os;
     }
+
     template <typename F>
-    class DecompArrayInterface {
-    public:
+    class DecompArrayMemoryManager {
         typedef F               RT;
         typedef std::complex<F> CT;
-        virtual RT* real_ptr() = 0;
-        virtual CT* cmpl_ptr() = 0;
-    };
-    template <class N>
-    class DefaultDecompArrayBase : public N {
-    protected:
-        using typename N::RT;
-        using typename N::CT;
+
+        class HostContextManager {
+            CT* const ptr;
+        public:
+            HostContextManager() = delete;
+            HostContextManager(const HostContextManager&) = default;
+            HostContextManager(CT* _ptr) : ptr(_ptr){}
+            RT* cmpl_ptr(){ return reinterpret_cast<RT*>(ptr); }
+            CT* real_ptr(){ return ptr; }
+        };
         CT* ptr;
         size_t alloc_bytes;
     public:
-        DefaultDecompArrayBase() = delete;
-        DefaultDecompArrayBase(DecompInfo cd){
+        DecompArrayMemoryManager() = delete;
+        DecompArrayMemoryManager(const DecompArrayMemoryManager<F>&) = delete;
+        DecompArrayMemoryManager(DecompInfo cd){
             size_t alloc_len = std::max(std::max(cd.xsize.prod(), cd.ysize.prod()), cd.zsize.prod());
             alloc_bytes = sizeof(CT) * alloc_len;
             ptr = new CT[alloc_len]{};
             int lock = mlock(ptr, alloc_bytes);
             if(lock) fprintf(stderr, "memory region cannot be pinned\n");
         }
-        ~DefaultDecompArrayBase(){ delete[] ptr; }
-        RT* real_ptr(){ return reinterpret_cast<RT*>(ptr); }
-        CT* cmpl_ptr(){ return reinterpret_cast<CT*>(ptr); }
+        ~DecompArrayMemoryManager(){ delete[] ptr; }
+        HostContextManager createManager(){ return HostContextManager(ptr); }
     };
-    template <typename F, template <class Interface> class Base = DefaultDecompArrayBase>
-    class DecompArray : public Base<DecompArrayInterface<F>> {
+    template <typename F, template <class> class Base = DecompArrayMemoryManager>
+    class DecompArray : public Base<F> {
         enum DecompType { XD = 1, YD, ZD };
         enum AccessType { RA = 1, CA };
         DecompType dectype;
@@ -208,16 +211,17 @@ namespace DecompImpl {
             //std::cerr << "from " << *this << " to " << to << std::endl;
             if(is_real() and to.is_real()){
                 ERROR("not implemented, as only complex arrays require global transposition for fft");
-            }
                 //global_transposition(this->real_ptr(), dectype, to.real_ptr(), to.dectype, realdec.get_index());
-            else if(is_cmpl() and to.is_cmpl())
-                global_transposition(this->real_ptr(), dectype, to.real_ptr(), to.dectype, cmpldec.get_index());
-            else ERROR("elem type must be the same for global transposition");
+            } else if(is_cmpl() and to.is_cmpl()){
+                auto man_from = this->createManager();
+                auto man_to = to.createManager();
+                global_transposition(man_from.cmpl_ptr(), dectype, man_to.cmpl_ptr(), to.dectype, cmpldec.get_index());
+            } else ERROR("elem type must be the same for global transposition");
         }
         template <typename T>
         void over(std::function<void (const int&, const int&, const int&, T&)> closure){
-            typedef typename DecompArrayInterface<F>::RT RT;
-            typedef typename DecompArrayInterface<F>::CT CT;
+            typedef typename Base<F>::RT RT;
+            typedef typename Base<F>::CT CT;
             DecompInfo* di = NULL;
             if(is_real() and sizeof(T)==sizeof(RT)) di = new DecompInfo(realdec);
             else if(is_cmpl() and sizeof(T)==sizeof(CT)) di = new DecompInfo(cmpldec);
@@ -259,7 +263,7 @@ namespace DecompImpl {
         }
     protected:
         DecompArray(DecompInfo _realdec, DecompInfo _cmpldec) :
-            Base<DecompArrayInterface<F>>(_cmpldec),
+            Base<F>(_cmpldec),
             dectype(XD), acctype(RA),
             realdec(_realdec), cmpldec(_cmpldec){
             if(not realdec.compatible_with_complex(cmpldec)) ERROR("real and cmpl decompositions cannot work together"); }
