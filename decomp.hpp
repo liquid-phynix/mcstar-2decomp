@@ -1,6 +1,8 @@
 #pragma once
 #include <mpi.h>
 #include <sys/mman.h>
+#include <string>
+#include <complex>
 #include "interop.h"
 #include "utils.hpp"
 
@@ -131,7 +133,6 @@ namespace DecompImpl {
         }
         bool operator==(const DecompInfo& other) const { return fi == other.fi; }
         bool operator!=(const DecompInfo& other) const { return fi != other.fi; }
-        //friend std::ostream& operator<<(std::ostream&, const DecompInfo&);
     };
 
     std::ostream& operator<<(std::ostream& os, const DecompInfo& di){
@@ -150,10 +151,10 @@ namespace DecompImpl {
         virtual CT* cmpl_ptr() = 0;
     };
     template <class N>
-    class DefaultDecompArrayBase : N {
+    class DefaultDecompArrayBase : public N {
+    protected:
         using typename N::RT;
         using typename N::CT;
-    protected:
         CT* ptr;
         size_t alloc_bytes;
     public:
@@ -170,7 +171,7 @@ namespace DecompImpl {
         CT* cmpl_ptr(){ return reinterpret_cast<CT*>(ptr); }
     };
     template <typename F, template <class Interface> class Base = DefaultDecompArrayBase>
-    class DecompArray : protected Base<DecompArrayInterface<F>> {
+    class DecompArray : public Base<DecompArrayInterface<F>> {
         enum DecompType { XD = 1, YD, ZD };
         enum AccessType { RA = 1, CA };
         DecompType dectype;
@@ -255,57 +256,54 @@ namespace DecompImpl {
         return os;
     }
 
-    template <typename F>
-    class FFTInterface {
+    template <typename F, class Derived>
+    class DistributedFFTBase {
     public:
-        virtual void forward(DecompArray<F>&, DecompArray<F>&) = 0;
-        virtual void backward(DecompArray<F>&, DecompArray<F>&) = 0;
+        template <template <class> class B>
+        void r2c(DecompArray<F, B>& a, DecompArray<F, B>& b){
+            if(not (a.is_real() and b.is_cmpl() and a.is_x() and b.is_z()))
+                ERROR("sanity check failed in r2c()");
+            // STEP 1
+            static_cast<Derived*>(this)->forward(a, b.as_x()); // x-fft, real -> cmpl
+            // STEP 2
+            //std::cerr << "from " << b << " to " << a << std::endl;
+            b >> a.as_cmpl().as_y(); // x -> y
+            // STEP 3
+            static_cast<Derived*>(this)->forward(a, b.as_y()); // y-fft, cmpl -> cmpl
+            // STEP 4
+            //std::cerr << "from " << b << " to " << a << std::endl;
+            b >> a.as_z(); // y -> z
+            // STEP 5
+            static_cast<Derived*>(this)->forward(a, b.as_z()); // z-fft, cmpl -> cmpl
+            a.as_x().as_real();
+        }
+        template <template <class> class B>
+        void c2r(DecompArray<F, B>& a, DecompArray<F, B>& b){
+            if(not (a.is_cmpl() and b.is_real() and a.is_z() and b.is_x()))
+                ERROR("sanity check failed in c2r()");
+            // STEP 1
+            static_cast<Derived*>(this)->backward(a, b.as_z().as_cmpl()); // z-ifft, cmpl -> cmpl
+            // STEP 2
+            //std::cerr << "from " << b << " to " << a << std::endl;
+            b >> a.as_y(); // z -> y
+            // STEP 3
+            static_cast<Derived*>(this)->backward(a, b.as_y()); // y-ifft, cmpl -> cmpl
+            // STEP 4
+            //std::cerr << "from " << b << " to " << a << std::endl;
+            b >> a.as_x(); // y -> x
+            // STEP 5
+            static_cast<Derived*>(this)->backward(a, b.as_x().as_real()); // x-ifft, cmpl -> real
+            a.as_z();
+        }
     };
-    template <typename F, class B>
-    class DummyFFT : public B {
+
+    template <typename F>
+    class DistributedFFT : public DistributedFFTBase<F, DistributedFFT<F>> {
     public:
         void forward(DecompArray<F>& in, DecompArray<F>& out){
             std::cerr << "dummy forward from " << in << " to " << out << std::endl; }
         void backward(DecompArray<F>& in, DecompArray<F>& out){
             std::cerr << "dummy backward from " << in << " to " << out << std::endl; }
-    };
-    template <typename F, template <typename, class> class Base = DummyFFT>
-    class DistributedFFT : Base<F, FFTInterface<F>> {
-    public:
-        void r2c(DecompArray<F>& a, DecompArray<F>& b){
-            if(not (a.is_real() and b.is_cmpl() and a.is_x() and b.is_z()))
-                ERROR("sanity check failed in r2c()");
-            // STEP 1
-            this->forward(a, b.as_x()); // x-fft, real -> cmpl
-            // STEP 2
-            //std::cerr << "from " << b << " to " << a << std::endl;
-            b >> a.as_cmpl().as_y(); // x -> y
-            // STEP 3
-            this->forward(a, b.as_y()); // y-fft, cmpl -> cmpl
-            // STEP 4
-            //std::cerr << "from " << b << " to " << a << std::endl;
-            b >> a.as_z(); // y -> z
-            // STEP 5
-            this->forward(a, b.as_z()); // z-fft, cmpl -> cmpl
-            a.as_x().as_real();
-        }
-        void c2r(DecompArray<F>& a, DecompArray<F>& b){
-            if(not (a.is_cmpl() and b.is_real() and a.is_z() and b.is_x()))
-                ERROR("sanity check failed in c2r()");
-            // STEP 1
-            this->backward(a, b.as_z().as_cmpl()); // z-ifft, cmpl -> cmpl
-            // STEP 2
-            //std::cerr << "from " << b << " to " << a << std::endl;
-            b >> a.as_y(); // z -> y
-            // STEP 3
-            this->backward(a, b.as_y()); // y-ifft, cmpl -> cmpl
-            // STEP 4
-            //std::cerr << "from " << b << " to " << a << std::endl;
-            b >> a.as_x(); // y -> x
-            // STEP 5
-            this->backward(a, b.as_x().as_real()); // x-ifft, cmpl -> real
-            a.as_z();
-        }
     };
 }
 

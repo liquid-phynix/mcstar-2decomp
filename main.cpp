@@ -6,7 +6,7 @@
 #include <string>
 #include <functional>
 
-#include "decomp.hpp"
+#include "decomp-fftw.hpp"
 #include "utils.hpp"
 
 #ifdef SINGLEFLOAT
@@ -24,21 +24,23 @@ typedef std::complex<Float> Complex;
 
 #define MASTER if(bk.get_rank() == 0)
 
-using namespace Decomp;
+using namespace DecompWithFFTW;
 
 int main(int argc, char* argv[]){
     int3 gshape = (argc == 4) ? int3({atoi(argv[1]), atoi(argv[2]), atoi(argv[3])}) : int3({80, 80, 80});
 
     Bookkeeping<Float> bk(gshape);
 
+    //DecompArray<Float> arrA(gshape);
+    //DecompArray<Float> arrB(arrA);
     DecompArray<Float> arrA(gshape);
     DecompArray<Float> arrB(arrA);
     arrA >> arrB.as_y();
     //Array arrB(arrA);
 
-    DistributedFFT<Float> fft;
-    fft.r2c(arrA, arrB.as_cmpl().as_z());
-    fft.c2r(arrB, arrA);
+    //DistributedFFT<Float> fft(arrA, arrB);
+    //fft.r2c(arrA, arrB.as_cmpl().as_z());
+    //fft.c2r(arrB, arrA);
 
     //TimeAcc tm;
     //for(int it = 1; it <= 10; it++){
