@@ -58,7 +58,7 @@ namespace DecompImpl {
                     pairid++;
                 }
                 clique_size = new int[size];
-                for(int id = 0; id < size; id++) { clique_size[id] = *pairid_ptr[id]; }
+                for(int id = 0; id < size; id++) { clique_size[id] = *pairid_ptr[id]+1; }
             }
             MPI::COMM_WORLD.Scatter(id_by_rank, 1, MPI_INT, &id_within_node, 1, MPI_INT, 0);
             MPI::COMM_WORLD.Scatter(clique_size, 1, MPI_INT, &node_size, 1, MPI_INT, 0);
