@@ -26,11 +26,14 @@ namespace DecompWithFFTWImpl {
         FFTWDecompArrayBase(DecompInfo cd){
             size_t alloc_len = std::max(std::max(cd.xsize.prod(), cd.ysize.prod()), cd.zsize.prod());
             alloc_bytes = sizeof(CT) * alloc_len;
-            ptr = (CT*)FPREF(malloc)(alloc_bytes);
+            ptr = (CT*)malloc(alloc_bytes);
+            memset(ptr, 0, alloc_bytes);
+            //ptr = (CT*)FPREF(malloc)(alloc_bytes);
             int lock = mlock(ptr, alloc_bytes);
             if(lock) fprintf(stderr, "memory region cannot be pinned\n");
         }
         ~FFTWDecompArrayBase(){ FPREF(free)(ptr); }
+        //~FFTWDecompArrayBase(){ free(ptr); }
         RT* real_ptr(){ return reinterpret_cast<RT*>(ptr); }
         CT* cmpl_ptr(){ return reinterpret_cast<CT*>(ptr); }
         FPREF(complex)* fftw_cmpl_ptr(){ return reinterpret_cast<FPREF(complex)*>(ptr); }
@@ -122,11 +125,11 @@ namespace DecompWithFFTWImpl {
             if(in.realdec != out.realdec or in.cmpldec != out.cmpldec)
                 ERROR("arrays of different decomposition index cannot be transformed");
                    if(in.is_x() and out.is_x() and in.is_cmpl() and out.is_real()){
-                FPREF(execute_dft_c2r(plan_z_back, in.fftw_cmpl_ptr(), out.real_ptr()));
+                FPREF(execute_dft_c2r(plan_x_c2r, in.fftw_cmpl_ptr(), out.real_ptr()));
             } else if(in.is_y() and out.is_y() and in.is_cmpl() and out.is_cmpl()){
                 FPREF(execute_dft(plan_y_back, in.fftw_cmpl_ptr(), out.fftw_cmpl_ptr()));
             } else if(in.is_z() and out.is_z() and in.is_cmpl() and out.is_cmpl()){
-                FPREF(execute_dft(plan_x_c2r, in.fftw_cmpl_ptr(), out.fftw_cmpl_ptr()));
+                FPREF(execute_dft(plan_z_back, in.fftw_cmpl_ptr(), out.fftw_cmpl_ptr()));
             } else ERROR("array decomposition mismatch in FFT::backward");
         }
     };

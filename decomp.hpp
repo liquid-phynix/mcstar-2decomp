@@ -162,7 +162,7 @@ namespace DecompImpl {
         DefaultDecompArrayBase(DecompInfo cd){
             size_t alloc_len = std::max(std::max(cd.xsize.prod(), cd.ysize.prod()), cd.zsize.prod());
             alloc_bytes = sizeof(CT) * alloc_len;
-            ptr = new CT[alloc_len];
+            ptr = new CT[alloc_len]{};
             int lock = mlock(ptr, alloc_bytes);
             if(lock) fprintf(stderr, "memory region cannot be pinned\n");
         }
@@ -194,9 +194,12 @@ namespace DecompImpl {
         void operator>>(DecompArray<F, Base>& to){
             if(not (realdec==to.realdec and cmpldec==to.cmpldec and acctype==to.acctype))
                 ERROR("arrays cannot be globally transposed");
+            //std::cerr << "realdec " << to.realdec << "\ncmpldec " << to.cmpldec << std::endl;
             //std::cerr << "from " << *this << " to " << to << std::endl;
-            if(is_real() and to.is_real())
-                global_transposition(this->real_ptr(), dectype, to.real_ptr(), to.dectype, realdec.get_index());
+            if(is_real() and to.is_real()){
+                ERROR("not implemented, as only complex arrays require global transposition for fft");
+            }
+                //global_transposition(this->real_ptr(), dectype, to.real_ptr(), to.dectype, realdec.get_index());
             else if(is_cmpl() and to.is_cmpl())
                 global_transposition(this->real_ptr(), dectype, to.real_ptr(), to.dectype, cmpldec.get_index());
             else ERROR("elem type must be the same for global transposition");

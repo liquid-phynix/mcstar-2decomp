@@ -35,12 +35,15 @@ int main(int argc, char* argv[]){
     //DecompArray<Float> arrB(arrA);
     DecompArray<Float> arrA(gshape);
     DecompArray<Float> arrB(arrA);
-    arrA >> arrB.as_y();
-    //Array arrB(arrA);
+    //arrA.as_cmpl(); arrB.as_cmpl();
 
-    //DistributedFFT<Float> fft(arrA, arrB);
-    //fft.r2c(arrA, arrB.as_cmpl().as_z());
-    //fft.c2r(arrB, arrA);
+    //arrA >> arrB.as_y();
+    //arrB >> arrA;
+
+    DistributedFFT<Float> fft(arrA, arrB);
+    arrB.as_cmpl().as_z();
+    //fft.r2c(arrA, arrB);
+    fft.c2r(arrB, arrA);
 
     //TimeAcc tm;
     //for(int it = 1; it <= 10; it++){
