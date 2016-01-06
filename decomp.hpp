@@ -204,47 +204,55 @@ namespace DecompImpl {
                 global_transposition(this->real_ptr(), dectype, to.real_ptr(), to.dectype, cmpldec.get_index());
             else ERROR("elem type must be the same for global transposition");
         }
+        template <typename T>
+        void over(std::function<void (const int&, const int&, const int&, T&)> closure){
+            typedef typename DecompArrayInterface<F>::RT RT;
+            typedef typename DecompArrayInterface<F>::CT CT;
+            DecompInfo* di = NULL;
+            if(is_real() and sizeof(T)==sizeof(RT)) di = new DecompInfo(realdec);
+            else if(is_cmpl() and sizeof(T)==sizeof(CT)) di = new DecompInfo(cmpldec);
+            if(di == NULL) ERROR("closure argument type and array type dont match");
+            T* ptr2 = reinterpret_cast<T*>(this->real_ptr());
+            int ix, iy, iz, ixg, iyg, izg, ixst, iyst, izst, xsz, ysz, zsz;
+            switch(dectype){
+                case XD:
+                    ixst = di->xstart.x; iyst = di->xstart.y; izst = di->xstart.z;
+                    xsz = di->xsize.x; ysz = di->xsize.y; zsz = di->xsize.z;
+                    break;
+                case YD:
+                    ixst = di->ystart.x; iyst = di->ystart.y; izst = di->ystart.z;
+                    xsz = di->ysize.x; ysz = di->ysize.y; zsz = di->ysize.z;
+                    break;
+                case ZD:
+                    ixst = di->zstart.x; iyst = di->zstart.y; izst = di->zstart.z;
+                    xsz = di->zsize.x; ysz = di->zsize.y; zsz = di->zsize.z;
+                    break;
+                default: ERROR("cannot happen");
+            }
+             for(iz = 0; iz < zsz; iz++){
+                 izg = izst + iz;
+                 for(iy = 0; iy < ysz; iy++){
+                     iyg = iyst + iy;
+                     for(ix = 0; ix < xsz; ix++){
+                         ixg = ixst + ix;
+                         closure(ixg, iyg, izg, *ptr2);
+                         ptr2++;
+                     }
+                 }
+             }
+            delete di;
+        }
+        void save(std::string fn){
+            save_array(this->real_ptr(), (acctype==RA ? 1 : 2) * sizeof(F),
+                       acctype==RA ? realdec.get_index() : cmpldec.get_index(),
+                       dectype, fn.c_str(), fn.size());
+        }
     protected:
         DecompArray(DecompInfo _realdec, DecompInfo _cmpldec) :
             Base<DecompArrayInterface<F>>(_cmpldec),
             dectype(XD), acctype(RA),
             realdec(_realdec), cmpldec(_cmpldec){
             if(not realdec.compatible_with_complex(cmpldec)) ERROR("real and cmpl decompositions cannot work together"); }
-        void save(std::string fn){
-            save_array(this->real_ptr(), (acctype==RA ? 1 : 2) * sizeof(F),
-                       acctype==RA ? realdec.get_index() : cmpldec.get_index(),
-                       dectype, fn.c_str(), fn.size());
-        }
-    /*
-    template <typename T>
-    void over(std::function<void (const int&, const int&, const int&, T&)> closure){
-
-        F* ptr2 = ptr;
-        int ix, iy, iz, ixg, iyg, izg, ixst, iyst, izst, xsz, ysz, zsz;
-        switch(pt){
-            case XD:
-                ixst = di.xstart.x; iyst = di.xstart.y; izst = di.xstart.z;
-                xsz = di.xsize.x; ysz = di.xsize.y; zsz = di.xsize.z;
-                break;
-            case YD:
-                ixst = di.ystart.x; iyst = di.ystart.y; izst = di.ystart.z;
-                xsz = di.ysize.x; ysz = di.ysize.y; zsz = di.ysize.z;
-                break;
-            case ZD:
-                ixst = di.zstart.x; iyst = di.zstart.y; izst = di.zstart.z;
-                xsz = di.zsize.x; ysz = di.zsize.y; zsz = di.zsize.z;
-                break;
-            default: ERROR("cannot happen"); }
-                     for(iz = 0; iz < zsz; iz++){
-                         izg = izst + iz;
-                         for(iy = 0; iy < ysz; iy++){
-                             iyg = iyst + iy;
-                             for(ix = 0; ix < xsz; ix++){
-                                 ixg = ixst + ix;
-                                 closure(ixg, iyg, izg, *ptr2);
-                                 ptr2++; }}}
-    }
-    */
     };
 
     template <typename F, template <class> class B>
@@ -268,6 +276,7 @@ namespace DecompImpl {
                 ERROR("sanity check failed in r2c()");
             // STEP 1
             static_cast<Derived*>(this)->forward(a, b.as_x()); // x-fft, real -> cmpl
+            return;
             // STEP 2
             //std::cerr << "from " << b << " to " << a << std::endl;
             b >> a.as_cmpl().as_y(); // x -> y

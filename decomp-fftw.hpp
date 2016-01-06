@@ -26,14 +26,12 @@ namespace DecompWithFFTWImpl {
         FFTWDecompArrayBase(DecompInfo cd){
             size_t alloc_len = std::max(std::max(cd.xsize.prod(), cd.ysize.prod()), cd.zsize.prod());
             alloc_bytes = sizeof(CT) * alloc_len;
-            ptr = (CT*)malloc(alloc_bytes);
+            ptr = (CT*)FPREF(malloc)(alloc_bytes);
             memset(ptr, 0, alloc_bytes);
-            //ptr = (CT*)FPREF(malloc)(alloc_bytes);
             int lock = mlock(ptr, alloc_bytes);
             if(lock) fprintf(stderr, "memory region cannot be pinned\n");
         }
         ~FFTWDecompArrayBase(){ FPREF(free)(ptr); }
-        //~FFTWDecompArrayBase(){ free(ptr); }
         RT* real_ptr(){ return reinterpret_cast<RT*>(ptr); }
         CT* cmpl_ptr(){ return reinterpret_cast<CT*>(ptr); }
         FPREF(complex)* fftw_cmpl_ptr(){ return reinterpret_cast<FPREF(complex)*>(ptr); }
@@ -71,7 +69,8 @@ namespace DecompWithFFTWImpl {
             repeat[1].n = real_array_size[1]; repeat[1].is = real_array_size[2]; repeat[1].os = array_size[2];
             plan_x_r2c = FPREF(plan_guru_dft_r2c)(transform_rank, &transform, repeat_rank, repeat, scratchA.real_ptr(), scratchB.fftw_cmpl_ptr(), FFTW_DESTROY_INPUT | FFTW_MEASURE);
 
-            transform.n = array_size[2]; // transform length
+            //transform.n = array_size[2]; // transform length
+            transform.n = real_array_size[2]; // transform length
             transform.is = transform.os = 1;
             repeat[0].n = array_size[0]; repeat[0].is = array_size[1] * array_size[2]; repeat[0].os = real_array_size[1] * real_array_size[2];
             repeat[1].n = array_size[1]; repeat[1].is = array_size[2]; repeat[1].os = real_array_size[2];
