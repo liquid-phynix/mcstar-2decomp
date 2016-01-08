@@ -6,7 +6,6 @@
 #include <random>
 #include <functional>
 #include "interop.h"
-#include "timing.hpp"
 
 void assert(bool cond, const char* file, const int line, const char* msg = NULL){
     if(not cond){
@@ -341,30 +340,49 @@ namespace DecompImpl {
         void r2c(DecompArray<MM>& a, DecompArray<MM>& b){
             ASSERTMSG(a.is_real() and b.is_cmpl() and a.is_x() and b.is_z(), "sanity check failed in r2c()");
             // STEP 1
+            tm1.start();
             static_cast<Derived*>(this)->forward(a, b.as_x()); // x-fft, real -> cmpl
+            tm1.stop(false);
             // STEP 2
+            tm3.start();
             b >> a.as_cmpl().as_y(); // x -> y
             // STEP 3
+            tm3.start();
             static_cast<Derived*>(this)->forward(a, b.as_y()); // y-fft, cmpl -> cmpl
+            tm3.stop(false);
             // STEP 4
+            tm3.start();
             b >> a.as_z(); // y -> z
+            tm3.stop(true);
             // STEP 5
+            tm1.start();
             static_cast<Derived*>(this)->forward(a, b.as_z()); // z-fft, cmpl -> cmpl
+            tm1.stop(true);
             a.as_x().as_real();
         }
         template <class MM>
         void c2r(DecompArray<MM>& a, DecompArray<MM>& b){
             ASSERTMSG(a.is_cmpl() and b.is_real() and a.is_z() and b.is_x(), "sanity check failed in c2r()");
             // STEP 1
+            tm2.start();
             static_cast<Derived*>(this)->backward(a, b.as_z().as_cmpl()); // z-ifft, cmpl -> cmpl
+            tm2.stop(false);
             // STEP 2
+            tm4.start();
             b >> a.as_y(); // z -> y
+            tm4.stop(false);
             // STEP 3
+            tm2.start();
             static_cast<Derived*>(this)->backward(a, b.as_y()); // y-ifft, cmpl -> cmpl
+            tm2.stop(false);
             // STEP 4
+            tm4.start();
             b >> a.as_x(); // y -> x
+            tm4.stop(true);
             // STEP 5
+            tm2.start();
             static_cast<Derived*>(this)->backward(a, b.as_x().as_real()); // x-ifft, cmpl -> real
+            tm2.stop(true);
             a.as_z();
         }
     };

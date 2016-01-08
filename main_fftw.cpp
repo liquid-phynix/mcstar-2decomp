@@ -1,5 +1,13 @@
 #include <iostream>
 #include <complex>
+#include "timing.hpp"
+
+namespace DecompImpl {
+    TimeAcc tm1;
+    TimeAcc tm2;
+    TimeAcc tm3;
+    TimeAcc tm4;
+}
 
 namespace Decomp {
 #ifdef SINGLEFLOAT
@@ -36,7 +44,11 @@ int main(int argc, char* argv[]){
         tm.stop();
     }
 
-    MASTER tm.report_avg_ms("on average a round of fft took %f ms\n");
+    MASTER tm.report_avg_ms("one full %f ms\n");
+    MASTER DecompImpl::tm1.report_avg_ms("fft > %f ms\n");
+    MASTER DecompImpl::tm2.report_avg_ms("fft < %f ms\n");
+    MASTER DecompImpl::tm3.report_avg_ms("trans > %f ms\n");
+    MASTER DecompImpl::tm4.report_avg_ms("trans < %f ms\n");
 
     end_decomp_context();
     MASTER std::cout << "terminating" << std::endl;
