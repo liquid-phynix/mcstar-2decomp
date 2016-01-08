@@ -5,7 +5,7 @@ include host.mk
 all: fftw_single clfft_single
 
 clfft_single.o: main_clfft.cpp
-	$(CXX) $(CFLAGS) -I$(CLINC) -I$(CLFFTINC) -Wno-deprecated-declarations -std=c++11 -DSINGLEFLOAT -c main_clfft.cpp -o $@
+	$(CXX) $(CFLAGS) $(CLINC) -I$(CLFFTINC) -Wno-deprecated-declarations -std=c++11 -DSINGLEFLOAT -c main_clfft.cpp -o $@
 clfft_single: clfft_single.o interop.o
 	$(CXX) $(LFLAGS) -L$(CLFFTLIB) -lOpenCL -lclFFT clfft_single.o interop.o $(LIB2DECOMPS) -o $@
 
