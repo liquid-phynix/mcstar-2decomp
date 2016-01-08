@@ -17,6 +17,7 @@ void oclAssert(const char* pref, cl_int err, const char* file, int line){
 namespace DecompGlobals {
     cl::Context context;
     cl::CommandQueue queue;
+    clfftSetupData fftSetup;
 }
 
 namespace DecompCLFFTImpl {
@@ -106,16 +107,16 @@ namespace DecompCLFFTImpl {
 
         DecompGlobals::queue = cl::CommandQueue(DecompGlobals::context, devices[devicenum]);
 
-        clfftSetupData fftSetup;
-        OCLERR(clfftInitSetupData(&fftSetup));
-        OCLERR(clfftSetup(&fftSetup));
+        //clfftSetupData fftSetup;
+        OCLERR(clfftInitSetupData(&DecompGlobals::fftSetup));
+        OCLERR(clfftSetup(&DecompGlobals::fftSetup));
     }
     void end_decomp_context(){
         if(not DecompGlobals::context_started){
             std::cerr << "decomp context has not been started" << std::endl;
             return;
         }
-        OCLERR(clfftTeardown());
+        //OCLERR(clfftTeardown());
         DecompImpl::end_decomp_context();
     }
 
@@ -129,11 +130,12 @@ namespace DecompCLFFTImpl {
             ContextMan(const ContextMan&) = delete;
             ContextMan(ContextMan&& cm) : host_ptr(std::move(cm.host_ptr)), buffer(cm.buffer){};
             ContextMan(cl::Buffer& _buffer, size_t bytes) : buffer(_buffer){
-                host_ptr = DecompGlobals::queue.enqueueMapBuffer(buffer, CL_FALSE, CL_MAP_READ | CL_MAP_WRITE, 0, bytes);
+                host_ptr = DecompGlobals::queue.enqueueMapBuffer(buffer, CL_TRUE, CL_MAP_READ | CL_MAP_WRITE, 0, bytes);
                 int lock = mlock(host_ptr, bytes);
                 if(lock) fprintf(stderr, "memory region (mapbuffer) is not pinned\n");
                 DecompGlobals::queue.enqueueBarrierWithWaitList();
                 DecompGlobals::queue.flush();
+                ASSERTMSG(host_ptr != NULL, "nullptr is returned when mapping buffer");
             }
             ~ContextMan(){
                 DecompGlobals::queue.enqueueUnmapMemObject(buffer, host_ptr);
@@ -201,6 +203,7 @@ namespace DecompCLFFTImpl {
 
             clfftPrecision prec = sizeof(RT) == 4 ? CLFFT_SINGLE : CLFFT_DOUBLE;
             //clfftPrecision prec = precbytes == 4 ? CLFFT_SINGLE_FAST : CLFFT_DOUBLE_FAST;
+
             OCLERR(clfftSetPlanPrecision(plan_x_r2c, prec));
             OCLERR(clfftSetPlanPrecision(plan_x_c2r, prec));
             OCLERR(clfftSetPlanPrecision(plan_y,     prec));
@@ -253,6 +256,22 @@ namespace DecompCLFFTImpl {
                 //FPREF(execute_dft(plan_z_back, manIn, manOut));
             } else ASSERTMSG(false, "array decomposition mismatch in FFT::backward");
         }
+    //void execute_x_r2c(cl_mem* in, cl_mem* out){
+        //OCLERR(clfftEnqueueTransform(plan_x_r2c, CLFFT_FORWARD, 1, &queue.object_, 0, NULL, NULL, in, out, NULL));
+        //queue.finish();
+    //}
+    //void execute_x_c2r(cl_mem* in, cl_mem* out){
+        //OCLERR(clfftEnqueueTransform(plan_x_c2r, CLFFT_BACKWARD, 1, &queue.object_, 0, NULL, NULL, in, out, NULL));
+        //queue.finish();
+    //}
+    //void execute_y(cl_mem* in, cl_mem* out, clfftDirection dir){
+        //OCLERR(clfftEnqueueTransform(plan_y, dir, 1, &queue.object_, 0, NULL, NULL, in, out, NULL));
+        //queue.finish();
+    //}
+    //void execute_z(cl_mem* in, cl_mem* out, clfftDirection dir){
+        //OCLERR(clfftEnqueueTransform(plan_z, dir, 1, &queue.object_, 0, NULL, NULL, in, out, NULL));
+        //queue.finish();
+    //}
     };
 }
 
