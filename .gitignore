@@ -4,3 +4,4 @@ main_single
 main_double
 *.mod
 *.bin
+host.mk
