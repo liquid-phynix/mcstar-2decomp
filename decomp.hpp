@@ -42,12 +42,14 @@ namespace DecompImpl {
     int size_of_node(){ return DecompGlobals::size_of_node; }
 
     struct int3 {
-        typedef int* IPTR;
         int x,y,z;
+        int3() = default;
+        int3(int _x, int _y, int _z){ x=_x; y=_y; z=_z; };
+        typedef int* IPTR;
         operator IPTR() const { return IPTR(this); }
         int prod() const { return x * y * z; }
         int3 halfcomplex() const { return {x/2+1, y, z}; }
-        //void to_shape(size_t shape[3]){ shape[0] = x; shape[1] = y; shape[2] = z; }
+        void size_t3(size_t shape[3]){ shape[0] = x; shape[1] = y; shape[2] = z; }
     } __attribute__((packed));
     std::ostream& operator<<(std::ostream& os, const int3& i3){
         os << "(" << i3.x << "," << i3.y << "," << i3.z << ")";
@@ -253,7 +255,7 @@ namespace DecompImpl {
         AccessType acctype;
     public:
         const DecompInfo decinfo;
-        const MM mm;
+        MM mm;
         DecompArray() = delete;
         DecompArray(const DecompArray& from) :
             dectype(from.dectype), acctype(from.acctype), decinfo(from.decinfo), mm(decinfo){}
