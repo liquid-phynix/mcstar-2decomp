@@ -35,16 +35,16 @@ namespace DecompCLFFTImpl {
     void print_platform_info(cl::Platform& p){
       std::cout << "***platform***\n";
       std::string str;
-      p.getInfo(CL_PLATFORM_PROFILE, &str);
-      std::cout << "profile: " << str << std::endl;
-      p.getInfo(CL_PLATFORM_VERSION, &str);
-      std::cout << "version: " << str << std::endl;
+      //p.getInfo(CL_PLATFORM_PROFILE, &str);
+      //std::cout << "profile: " << str << std::endl;
+      //p.getInfo(CL_PLATFORM_VERSION, &str);
+      //std::cout << "version: " << str << std::endl;
       p.getInfo(CL_PLATFORM_NAME, &str);
       std::cout << "name: " << str << std::endl;
-      p.getInfo(CL_PLATFORM_VENDOR, &str);
-      std::cout << "vendor: " << str << std::endl;
-      p.getInfo(CL_PLATFORM_EXTENSIONS, &str);
-      std::cout << "exts: " << str << std::endl;
+      //p.getInfo(CL_PLATFORM_VENDOR, &str);
+      //std::cout << "vendor: " << str << std::endl;
+      //p.getInfo(CL_PLATFORM_EXTENSIONS, &str);
+      //std::cout << "exts: " << str << std::endl;
       std::cout << "**************\n";
     }
 
@@ -53,18 +53,18 @@ namespace DecompCLFFTImpl {
       std::string str;
       d.getInfo(CL_DEVICE_NAME, &str);
       std::cout << "name: " << str << std::endl;
-      d.getInfo(CL_DEVICE_VENDOR, &str);
-      std::cout << "vendor: " << str << std::endl;
-      d.getInfo(CL_DEVICE_PROFILE, &str);
-      std::cout << "profile: " << str << std::endl;
-      d.getInfo(CL_DEVICE_VERSION, &str);
-      std::cout << "device ver.: " << str << std::endl;
-      d.getInfo(CL_DRIVER_VERSION, &str);
-      std::cout << "driver ver.: " << str << std::endl;
-      d.getInfo(CL_DEVICE_OPENCL_C_VERSION, &str);
-      std::cout << "ocl ver.: " << str << std::endl;
-      d.getInfo(CL_DEVICE_EXTENSIONS, &str);
-      std::cout << "exts: " << str << std::endl;
+      //d.getInfo(CL_DEVICE_VENDOR, &str);
+      //std::cout << "vendor: " << str << std::endl;
+      //d.getInfo(CL_DEVICE_PROFILE, &str);
+      //std::cout << "profile: " << str << std::endl;
+      //d.getInfo(CL_DEVICE_VERSION, &str);
+      //std::cout << "device ver.: " << str << std::endl;
+      //d.getInfo(CL_DRIVER_VERSION, &str);
+      //std::cout << "driver ver.: " << str << std::endl;
+      //d.getInfo(CL_DEVICE_OPENCL_C_VERSION, &str);
+      //std::cout << "ocl ver.: " << str << std::endl;
+      //d.getInfo(CL_DEVICE_EXTENSIONS, &str);
+      //std::cout << "exts: " << str << std::endl;
       std::cout << "**************\n";
     }
 
@@ -155,6 +155,7 @@ namespace DecompCLFFTImpl {
             DecompGlobals::queue.enqueueBarrierWithWaitList();
             DecompGlobals::queue.flush();
         }
+        cl_mem* get_mem(){ return &buffer.object_; }
         ContextMan operator()() { return ContextMan(buffer, alloc_bytes); }
     };
 
@@ -233,45 +234,33 @@ namespace DecompCLFFTImpl {
             OCLERR(clfftDestroyPlan(&plan_z));
         }
         void forward(DecompArray& in, DecompArray& out){
-            auto manIn = in.mm();
-            auto manOut = out.mm();
             ASSERTMSG(in.decinfo == out.decinfo, "arrays of different decomposition index cannot be transformed");
                    if(in.is_x() and out.is_x() and in.is_real() and out.is_cmpl()){
-                //FPREF(execute_dft_r2c(plan_x_r2c, manIn, manOut));
+                OCLERR(clfftEnqueueTransform(plan_x_r2c, CLFFT_FORWARD, 1,
+                       &DecompGlobals::queue.object_, 0, NULL, NULL, in.mm.get_mem(), out.mm.get_mem(), NULL));
             } else if(in.is_y() and out.is_y() and in.is_cmpl() and out.is_cmpl()){
-                //FPREF(execute_dft(plan_y_forw, manIn, manOut));
+                OCLERR(clfftEnqueueTransform(plan_y, CLFFT_FORWARD, 1,
+                       &DecompGlobals::queue.object_, 0, NULL, NULL, in.mm.get_mem(), out.mm.get_mem(), NULL));
             } else if(in.is_z() and out.is_z() and in.is_cmpl() and out.is_cmpl()){
-                //FPREF(execute_dft(plan_z_forw, manIn, manOut));
+                OCLERR(clfftEnqueueTransform(plan_z, CLFFT_FORWARD, 1,
+                       &DecompGlobals::queue.object_, 0, NULL, NULL, in.mm.get_mem(), out.mm.get_mem(), NULL));
             } else ASSERTMSG(false, "array decomposition mismatch in FFT::forward");
+            DecompGlobals::queue.enqueueBarrierWithWaitList();
         }
         void backward(DecompArray& in, DecompArray& out){
-            auto manIn = in.mm();
-            auto manOut = out.mm();
             ASSERTMSG(in.decinfo == out.decinfo, "arrays of different decomposition index cannot be transformed");
                    if(in.is_x() and out.is_x() and in.is_cmpl() and out.is_real()){
-                //FPREF(execute_dft_c2r(plan_x_c2r, manIn, manOut));
+                OCLERR(clfftEnqueueTransform(plan_x_c2r, CLFFT_BACKWARD, 1,
+                       &DecompGlobals::queue.object_, 0, NULL, NULL, in.mm.get_mem(), out.mm.get_mem(), NULL));
             } else if(in.is_y() and out.is_y() and in.is_cmpl() and out.is_cmpl()){
-                //FPREF(execute_dft(plan_y_back, manIn, manOut));
+                OCLERR(clfftEnqueueTransform(plan_y, CLFFT_BACKWARD, 1,
+                       &DecompGlobals::queue.object_, 0, NULL, NULL, in.mm.get_mem(), out.mm.get_mem(), NULL));
             } else if(in.is_z() and out.is_z() and in.is_cmpl() and out.is_cmpl()){
-                //FPREF(execute_dft(plan_z_back, manIn, manOut));
+                OCLERR(clfftEnqueueTransform(plan_z, CLFFT_BACKWARD, 1,
+                       &DecompGlobals::queue.object_, 0, NULL, NULL, in.mm.get_mem(), out.mm.get_mem(), NULL));
             } else ASSERTMSG(false, "array decomposition mismatch in FFT::backward");
+            DecompGlobals::queue.enqueueBarrierWithWaitList();
         }
-    //void execute_x_r2c(cl_mem* in, cl_mem* out){
-        //OCLERR(clfftEnqueueTransform(plan_x_r2c, CLFFT_FORWARD, 1, &queue.object_, 0, NULL, NULL, in, out, NULL));
-        //queue.finish();
-    //}
-    //void execute_x_c2r(cl_mem* in, cl_mem* out){
-        //OCLERR(clfftEnqueueTransform(plan_x_c2r, CLFFT_BACKWARD, 1, &queue.object_, 0, NULL, NULL, in, out, NULL));
-        //queue.finish();
-    //}
-    //void execute_y(cl_mem* in, cl_mem* out, clfftDirection dir){
-        //OCLERR(clfftEnqueueTransform(plan_y, dir, 1, &queue.object_, 0, NULL, NULL, in, out, NULL));
-        //queue.finish();
-    //}
-    //void execute_z(cl_mem* in, cl_mem* out, clfftDirection dir){
-        //OCLERR(clfftEnqueueTransform(plan_z, dir, 1, &queue.object_, 0, NULL, NULL, in, out, NULL));
-        //queue.finish();
-    //}
     };
 }
 

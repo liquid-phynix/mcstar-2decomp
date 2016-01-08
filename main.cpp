@@ -29,12 +29,12 @@ int main(int argc, char* argv[]){
     DistributedFFT fft(arrA.decinfo);
     std::cout << "fft initialized" << std::endl;
 
-    //arrB.as_z();
+    arrB.as_z();
     //std::cout << "arrA=" << arrA << std::endl;
     //std::cout << "arrB=" << arrB << std::endl;
 
-    //fft.r2c(arrA, arrB);
-    //fft.c2r(arrB, arrA);
+    fft.r2c(arrA, arrB);
+    fft.c2r(arrB, arrA);
 
 
     //TimeAcc tm;
