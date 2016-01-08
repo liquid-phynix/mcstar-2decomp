@@ -9,8 +9,8 @@ namespace Decomp {
 #endif
     typedef std::complex<RT> CT;
 }
-#include "decomp.hpp"
-using namespace Decomp;
+#include "decomp-fftw.hpp"
+using namespace DecompFFTW;
 
 int main(int argc, char* argv[]){
     int3 gshape = (argc == 4) ? int3({atoi(argv[1]), atoi(argv[2]), atoi(argv[3])}) : int3({80, 80, 80});
@@ -25,7 +25,6 @@ int main(int argc, char* argv[]){
 
 
     over<RT>(arrA.as_real(), [](const int& gi0, const int& gi1, const int& gi2, Decomp::RT& v){ v = (rand() / RT(RAND_MAX)); });
-
 
     DistributedFFT fft;
 

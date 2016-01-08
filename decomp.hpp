@@ -308,7 +308,7 @@ namespace DecompImpl {
             ixst = di->zstart.x; iyst = di->zstart.y; izst = di->zstart.z;
             xsz = di->zsize.x; ysz = di->zsize.y; zsz = di->zsize.z;
         } else ASSERTMSG(false, "cannot happen");
-        MemoryMan::ContextMan man = arr.mm();
+        auto man = arr.mm();
         T* ptr = man;
         for(iz = 0; iz < zsz; iz++){
             izg = izst + iz;
