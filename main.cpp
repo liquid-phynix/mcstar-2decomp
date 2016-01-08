@@ -14,12 +14,13 @@ using namespace DecompCLFFT;
 
 int main(int argc, char* argv[]){
     int3 gshape = (argc == 4) ? int3({atoi(argv[1]), atoi(argv[2]), atoi(argv[3])}) : int3({80, 80, 80});
-    DecompCLFFT::start_decomp_context(gshape, 0, CPU);
+    DecompCLFFT::start_decomp_context(gshape, 1, GPU);
+    //DecompCLFFT::start_decomp_context(gshape, 0, CPU);
 
     DecompArray arrA(gshape);
     DecompArray arrB(arrA);
 
-    arrA.save("real.bin");
+    //arrA.save("real.bin");
 
     arrA.as_cmpl() >> arrB.as_cmpl().as_y();
 
@@ -33,21 +34,19 @@ int main(int argc, char* argv[]){
     //std::cout << "arrA=" << arrA << std::endl;
     //std::cout << "arrB=" << arrB << std::endl;
 
-    fft.r2c(arrA, arrB);
-    fft.c2r(arrB, arrA);
+    //fft.r2c(arrA, arrB);
+    //fft.c2r(arrB, arrA);
 
 
-    //TimeAcc tm;
-    //for(int it = 1; it <= 10; it++){
-        //tm.start();
-        //DFFT::r2c(fft, arrA, arrB);
-        //DFFT::c2r(fft, arrB, arrA);
-        //tm.stop();
-    //}
-    ////arr_real.save("output.bin");
+    TimeAcc tm;
+    for(int it = 1; it <= 10; it++){
+        tm.start();
+        fft.r2c(arrA, arrB);
+        fft.c2r(arrB, arrA);
+        tm.stop();
+    }
 
-    //MASTER tm.report_avg_ms("on average a round of fft took %f ms\n");
-    ////if(bk.rank == 0) std::cerr << "program terminating" << std::endl;
+    MASTER tm.report_avg_ms("on average a round of fft took %f ms\n");
 
     DecompCLFFT::end_decomp_context();
     std::cout << "terminating" << std::endl;

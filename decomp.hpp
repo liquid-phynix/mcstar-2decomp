@@ -19,7 +19,7 @@ void assert(bool cond, const char* file, const int line, const char* msg = NULL)
 }
 #define ASSERTMSG(stuff, msg) assert(stuff, __FILE__, __LINE__, msg)
 #define ASSERT(stuff) assert(stuff, __FILE__, __LINE__)
-#define MASTER if(rank() == 0)
+#define MASTER if(DecompImpl::rank() == 0)
 
 namespace DecompGlobals {
 
