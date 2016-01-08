@@ -1,48 +1,49 @@
 #include <iostream>
-#include <cstdlib>
-#include <cstdio>
 #include <complex>
-#include <vector>
-#include <string>
 #include <functional>
 
-#include "decomp-fftw.hpp"
-#include "utils.hpp"
-
+namespace Decomp {
 #ifdef SINGLEFLOAT
-typedef float Float;
+    typedef float RT;
 #else
-typedef double Float;
+    typedef double RT;
 #endif
-typedef std::complex<Float> Complex;
+    typedef std::complex<RT> CT;
+}
 
-//void init_array(const int& gi0, const int& gi1, const int& gi2, Float& v){ v = rand() / Float(RAND_MAX); }
-//void init_array(const int& gi0, const int& gi1, const int& gi2, Float& v){ v = gi0; }
-//void init_array(const int& gi0, const int& gi1, const int& gi2, Float& v){ v = gi1; }
-//void init_array(const int& gi0, const int& gi1, const int& gi2, Float& v){ v = gi2; }
-//void init_cmpl_array(const int& gi0, const int& gi1, const int& gi2, std::complex<Float>& v){ v = {Float(gi0), Float(gi1)}; }
-
-#define MASTER if(bk.get_rank() == 0)
-
-using namespace DecompWithFFTW;
+#include "new-decomp.hpp"
+using namespace Decomp;
 
 int main(int argc, char* argv[]){
     int3 gshape = (argc == 4) ? int3({atoi(argv[1]), atoi(argv[2]), atoi(argv[3])}) : int3({80, 80, 80});
+    start_decomp_context(gshape);
 
-    Bookkeeping<Float> bk(gshape);
+    DecompArray arrA(gshape);
+    DecompArray arrB(arrA);
 
-    DecompArray<Float> arrA(gshape);
-    DecompArray<Float> arrB(arrA);
-    DistributedFFT<Float> fft(arrA, arrB);
-
-    arrA.over<Float>([](const int& gi0, const int& gi1, const int& gi2, Float& v){
-        v = Float(rand() / Float(RAND_MAX)); });
     arrA.save("real.bin");
-    arrB.as_cmpl().as_z();
+
+    arrA.as_cmpl() >> arrB.as_cmpl().as_y();
+
+
+    over<RT>(arrA.as_real(), [](const int& gi0, const int& gi1, const int& gi2, Decomp::RT& v){ v = (rand() / RT(RAND_MAX)); });
+
+
+    DistributedFFT fft;
+
+    arrB.as_z();
+    std::cout << "arrA=" << arrA << std::endl;
+    std::cout << "arrB=" << arrB << std::endl;
+
     fft.r2c(arrA, arrB);
-    arrB.save("cmpl.bin");
     fft.c2r(arrB, arrA);
-    arrA.save("real_back.bin");
+
+    //arrA.save("real.bin");
+    //arrB.as_cmpl().as_z();
+    //fft.r2c(arrA, arrB);
+    //arrB.save("cmpl.bin");
+    //fft.c2r(arrB, arrA);
+    //arrA.save("real_back.bin");
 
     //arrA.over<Complex>([](const int& gi0, const int& gi1, const int& gi2, Complex& v){
         //v = {Float(rand() / Float(RAND_MAX)), Float(rand() / Float(RAND_MAX))}; });
@@ -81,5 +82,6 @@ int main(int argc, char* argv[]){
     //MASTER tm.report_avg_ms("on average a round of fft took %f ms\n");
     ////if(bk.rank == 0) std::cerr << "program terminating" << std::endl;
 
+    end_decomp_context();
     return EXIT_SUCCESS;
 }
