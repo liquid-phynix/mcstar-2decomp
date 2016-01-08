@@ -91,10 +91,8 @@ namespace DecompCLFFTImpl {
         DecompGlobals::context = cl::Context(devt, cps);
         std::vector<cl::Device> devices = DecompGlobals::context.getInfo<CL_CONTEXT_DEVICES>();
         int devicenum = rank_in_node();
-        if(devicenum >= devices.size()){
-            //ERROR("devicenum out of range");
-            devicenum = 0;
-        }
+        ASSERTMSG(devicenum < devices.size(), "devicenum out of range");
+        //if(devicenum >= devices.size()){devicenum = 0;}
         std::string device_name;
         devices[devicenum].getInfo(CL_DEVICE_NAME, &device_name);
         strncpy(charbuf, device_name.c_str(), sizeof(charbuf));

@@ -24,7 +24,7 @@ int main(int argc, char* argv[]){
     over<RT>(arrA.as_real(), [](const int& gi0, const int& gi1, const int& gi2, Decomp::RT& v){ v = (rand() / RT(RAND_MAX)); });
 
     DistributedFFT fft(arrA, arrB);
-    std::cout << "fft initialized" << std::endl;
+    MASTER std::cout << "fft initialized" << std::endl;
 
     arrB.as_z();
 
@@ -39,6 +39,6 @@ int main(int argc, char* argv[]){
     MASTER tm.report_avg_ms("on average a round of fft took %f ms\n");
 
     end_decomp_context();
-    std::cout << "terminating" << std::endl;
+    MASTER std::cout << "terminating" << std::endl;
     return EXIT_SUCCESS;
 }
