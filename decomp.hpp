@@ -4,6 +4,7 @@
 #include <string>
 #include <complex>
 #include <random>
+#include <functional>
 #include "interop.h"
 #include "timing.hpp"
 

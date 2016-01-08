@@ -1,6 +1,5 @@
 #include <iostream>
 #include <complex>
-#include <functional>
 
 namespace Decomp {
 #ifdef SINGLEFLOAT
@@ -10,8 +9,7 @@ namespace Decomp {
 #endif
     typedef std::complex<RT> CT;
 }
-
-#include "new-decomp.hpp"
+#include "decomp.hpp"
 using namespace Decomp;
 
 int main(int argc, char* argv[]){
@@ -38,37 +36,6 @@ int main(int argc, char* argv[]){
     fft.r2c(arrA, arrB);
     fft.c2r(arrB, arrA);
 
-    //arrA.save("real.bin");
-    //arrB.as_cmpl().as_z();
-    //fft.r2c(arrA, arrB);
-    //arrB.save("cmpl.bin");
-    //fft.c2r(arrB, arrA);
-    //arrA.save("real_back.bin");
-
-    //arrA.over<Complex>([](const int& gi0, const int& gi1, const int& gi2, Complex& v){
-        //v = {Float(rand() / Float(RAND_MAX)), Float(rand() / Float(RAND_MAX))}; });
-
-
-    //arrA.as_cmpl().as_z();
-    //arrB.as_cmpl().as_z();
-    //arrA.over<Complex>([](const int& gi0, const int& gi1, const int& gi2, Complex& v){ v = {Float(rand() / Float(RAND_MAX)),Float(rand() / Float(RAND_MAX))}; });
-    //arrA.save("cmpl.bin");
-
-    ////arrB.as_cmpl().over<Complex>([](const int& gi0, const int& gi1, const int& gi2, Complex& v){ v = {Float(gi0), Float(gi1)}; });
-    ////arrB.save("cmpl.bin");
-
-    ////fft.r2c(arrA, arrB.as_cmpl());
-    //fft.forward(arrA, arrB);
-    //arrB.save("cmpl_zf.bin");
-    //fft.backward(arrB, arrA);
-    ////std::cerr << "arrA: " << arrA << std::endl;
-    //arrA.save("cmpl_back.bin");
-    //arrA >> arrB.as_y();
-    //arrB >> arrA;
-
-    //arrB.as_cmpl().as_z();
-    //arrB.save("cmpl.bin");
-    //fft.c2r(arrB, arrA);
 
     //TimeAcc tm;
     //for(int it = 1; it <= 10; it++){
