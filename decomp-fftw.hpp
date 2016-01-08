@@ -144,8 +144,8 @@ namespace DecompFFTW {
     using Decomp::RT;
     using Decomp::CT;
     using DecompImpl::int3;
-    //using DecompImpl::start_decomp_context;
-    //using DecompImpl::end_decomp_context;
+    using DecompImpl::start_decomp_context;
+    using DecompImpl::end_decomp_context;
     //using DecompImpl::size;
     //using DecompImpl::rank;
     //using DecompImpl::seed;
@@ -153,5 +153,5 @@ namespace DecompFFTW {
     //using DecompImpl::size_of_node;
     using DecompFFTWImpl::DecompArray;
     using DecompImpl::over;
-    using DecompImpl::DistributedFFT;
+    using DecompFFTWImpl::DistributedFFT;
 }

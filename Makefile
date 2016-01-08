@@ -1,17 +1,22 @@
+include host.mk
+
 .PHONY: all, clean
 
-all: main_single
+all: fftw_single clfft_single
 
-main_single: main_single.o interop.o
-	mpic++ -g -lOpenCL -L ../clFFT/build/library/ -lclFFT -lmpi_usempif08 -lmpi_usempi_ignore_tkr -lmpi_mpifh -lgfortran -lmpi_cxx main_single.o interop.o ../2decomp_fft_single/lib/lib2decomp_fft.a -o $@
+clfft_single.o: main_clfft.cpp
+	$(CXX) $(CFLAGS) -I$(CLINC) -I$(CLFFTINC) -Wno-deprecated-declarations -std=c++11 -DSINGLEFLOAT -c main_clfft.cpp -o $@
+clfft_single: clfft_single.o interop.o
+	$(CXX) $(LFLAGS) -L$(CLFFTLIB) -lOpenCL -lclFFT clfft_single.o interop.o $(LIB2DECOMPS) -o $@
 
-main_single.o: main.cpp
-	mpic++ -g -Wno-deprecated-declarations -std=c++11 -I ../clFFT/src/include/ -DSINGLEFLOAT -c main.cpp -o $@
+fftw_single.o: main_fftw.cpp
+	$(CXX) $(CFLAGS) -std=c++11 -DSINGLEFLOAT -c main_fftw.cpp -o $@
+fftw_single: fftw_single.o interop.o
+	$(CXX) $(LFLAGS) -lm -lfftw3f fftw_single.o interop.o $(LIB2DECOMPS) -o $@
 
 interop.o: interop.f95
-	mpif90 -fbounds-check -g -std=f2003 -I ../2decomp_fft_single/include -c interop.f95 -o $@
+	$(FC) -fbounds-check -g -std=f2003 -I$(INC2DECOMPS) -c interop.f95 -o $@
 	rm decomp_2d_interop.mod
 
 clean:
-	@(rm -f main_single main main_double main_single.o main.o |& > /dev/null; true)
-	@(rm -f interop.o iop.mod |& > /dev/null; true)
+	@(rm -f fftw_single fftw_single.o clfft_single clfft_single.o interop.o)
