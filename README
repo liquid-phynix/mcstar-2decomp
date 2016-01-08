@@ -1,0 +1,36 @@
+decomp.hpp:
+
+ requirements:
+  - float types `Float` and `Complex` be defined in `Decomp` namespace
+
+ free functions:
+
+  - assert()
+
+ macros:
+
+  - MASTER
+  - ASSERT()
+  - ASSERTMSG()
+
+ namespaces:
+
+  DecompGlobals:
+
+   - size, rank, seed, rank_in_node, size_of_node
+
+  Decomp:
+
+   free functions:
+
+    - start_decomp_context()
+    - end_decomp_context()
+    - check_if_homogeneous()
+    - size(), rank(), seed(), rank_in_node(), size_of_node()
+
+   classes:
+
+    - int3
+    - _DecompInfo
+    - DecompInfo
+
