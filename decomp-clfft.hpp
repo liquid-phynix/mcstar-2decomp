@@ -17,7 +17,7 @@ void oclAssert(const char* pref, cl_int err, const char* file, int line){
 namespace DecompGlobals {
     cl::Context context;
     cl::CommandQueue queue;
-    clfftSetupData fftSetup;
+    clfftSetupData* fftSetup = NULL;
 }
 
 namespace DecompCLFFTImpl {
@@ -105,16 +105,17 @@ namespace DecompCLFFTImpl {
 
         DecompGlobals::queue = cl::CommandQueue(DecompGlobals::context, devices[devicenum]);
 
-        //clfftSetupData fftSetup;
-        OCLERR(clfftInitSetupData(&DecompGlobals::fftSetup));
-        OCLERR(clfftSetup(&DecompGlobals::fftSetup));
+        DecompGlobals::fftSetup = new clfftSetupData;
+        OCLERR(clfftInitSetupData(DecompGlobals::fftSetup));
+        OCLERR(clfftSetup(DecompGlobals::fftSetup));
     }
     void end_decomp_context(){
         if(not DecompGlobals::context_started){
             std::cerr << "decomp context has not been started" << std::endl;
             return;
         }
-        //OCLERR(clfftTeardown());
+        OCLERR(clfftTeardown());
+        delete DecompGlobals::fftSetup;
         DecompImpl::end_decomp_context();
     }
 
