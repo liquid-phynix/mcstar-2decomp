@@ -4,12 +4,12 @@ include host.mk
 
 all: fftw_single clfft_single
 
-clfft_single.o: main_clfft.cpp
+clfft_single.o: main_clfft.cpp decomp.hpp decomp-clfft.hpp
 	$(CXX) $(CFLAGS) $(CLINC) -I$(CLFFTINC) -Wno-deprecated-declarations -std=c++11 -DSINGLEFLOAT -c main_clfft.cpp -o $@
 clfft_single: clfft_single.o interop.o
 	$(CXX) $(LFLAGS) -L$(CLFFTLIB) -lOpenCL -lclFFT clfft_single.o interop.o $(LIB2DECOMPS) -o $@
 
-fftw_single.o: main_fftw.cpp
+fftw_single.o: main_fftw.cpp decomp.hpp decomp-fftw.hpp
 	$(CXX) $(CFLAGS) -std=c++11 -DSINGLEFLOAT -c main_fftw.cpp -o $@
 fftw_single: fftw_single.o interop.o
 	$(CXX) $(LFLAGS) -lm -lfftw3f fftw_single.o interop.o $(LIB2DECOMPS) -o $@
