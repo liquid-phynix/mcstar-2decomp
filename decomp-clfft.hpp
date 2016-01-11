@@ -290,7 +290,7 @@ namespace DecompCLFFTImpl {
                 OCLERR(clfftEnqueueTransform(plan_x_c2r, CLFFT_BACKWARD, 1,
                        &DecompGlobals::queue.object_, 0, NULL, NULL, in.mm.get_mem(), out.mm.get_mem(), NULL));
             } else if(in.is_y() and out.is_y() and in.is_cmpl() and out.is_cmpl()){
-                size_t stride = sizeof(CT) * in.decinfo.cmpldec.ysize.x * in.decinfo.cmpldec.ysize.y;
+                size_t stride = in.mm.y_cont_alloc_bytes;
                 for(int zi = 0; zi < in.decinfo.cmpldec.ysize.z; zi++){
                     OCLERR(clEnqueueCopyBuffer(DecompGlobals::queue.object_, *in.mm.get_mem(), *in.mm.get_y_cont_mem(), zi * stride, 0, stride, 0, NULL, NULL));
                     OCLERR(clfftEnqueueTransform(plan_y, CLFFT_BACKWARD, 1,
