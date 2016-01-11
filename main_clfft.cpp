@@ -29,22 +29,34 @@ int main(int argc, char* argv[]){
     DecompArray arrA(gshape);
     DecompArray arrB(arrA);
 
-    arrA.as_cmpl() >> arrB.as_cmpl().as_y();
-
-    over<RT>(arrA.as_real(), [](const int& gi0, const int& gi1, const int& gi2, Decomp::RT& v){ v = (rand() / RT(RAND_MAX)); });
+    //over<RT>(arrA, [](const int& gi0, const int& gi1, const int& gi2, RT& v){ v = (rand() / RT(RAND_MAX)); });
 
     DistributedFFT fft(arrA.decinfo);
     MASTER std::cout << "fft initialized" << std::endl;
 
-    arrB.as_z();
+
+    arrA.as_y().as_cmpl();
+    arrB.as_y().as_cmpl();
+
+    over<CT>(arrA, [](const int& gi0, const int& gi1, const int& gi2, CT& v){ v = {RT(rand() / RT(RAND_MAX)), RT(rand() / RT(RAND_MAX))}; });
+    //over<RT>(arrA, [](const int& gi0, const int& gi1, const int& gi2, RT& v){ v = (rand() / RT(RAND_MAX)); });
+    arrA.save("input.bin");
+    fft.forward(arrA, arrB);
+    arrB.save("output.bin");
+    fft.backward(arrB, arrA);
+    arrA.save("inputb.bin");
+
+    return 1;
 
     TimeAcc tm;
-    for(int it = 1; it <= 10; it++){
-        tm.start();
-        fft.r2c(arrA, arrB);
-        fft.c2r(arrB, arrA);
-        tm.stop();
-    }
+    //for(int it = 1; it <= 10; it++){
+        //tm.start();
+        //fft.r2c(arrA, arrB);
+        //arrB.save("output.bin");
+        //break;
+        //fft.c2r(arrB, arrA);
+        //tm.stop();
+    //}
 
     MASTER tm.report_avg_ms("one full %f ms\n");
     MASTER DecompImpl::tm1.report_avg_ms("fft > %f ms\n");

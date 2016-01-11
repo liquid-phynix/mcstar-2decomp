@@ -71,6 +71,7 @@ namespace DecompImpl {
         srand(rd() * rand());
         DecompGlobals::seed = rand();
         srand(seed());
+        std::cout << "rank (" << rank() << ") says seed (" << seed() << ")" << std::endl;
 
         char pname[MPI_MAX_PROCESSOR_NAME]{};
         int pnamelen;

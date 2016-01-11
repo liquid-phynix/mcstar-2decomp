@@ -4,13 +4,21 @@
 #include <clFFT.h>
 #include "decomp.hpp"
 #include "sys/mman.h"
-#define __CL_ENABLE_EXCEPTIONS
+//#define __CL_ENABLE_EXCEPTIONS
 #include "cl.hpp"
 
 void oclAssert(const char* pref, cl_int err, const char* file, int line){
-    if(err != CL_SUCCESS){
-        fprintf(stderr, "OCLERR: %s %s:%d\n", pref, file, line); exit(1);
+    if(err == CL_SUCCESS) return;
+    const char* reasons[] = {"CL_INVALID_MEM_OBJECT", "CL_INVALID_VALUE", "CL_MISALIGNED_SUB_BUFFER_OFFSET", "CL_MEM_COPY_OVERLAP", "CL_MEM_OBJECT_ALLOCATION_FAILURE", "CL_OUT_OF_RESOURCES", "CL_OUT_OF_HOST_MEMORY"};
+    const int reason_codes[] = {CL_INVALID_MEM_OBJECT, CL_INVALID_VALUE, CL_MISALIGNED_SUB_BUFFER_OFFSET, CL_MEM_COPY_OVERLAP, CL_MEM_OBJECT_ALLOCATION_FAILURE, CL_OUT_OF_RESOURCES, CL_OUT_OF_HOST_MEMORY};
+    for(int i = 0; i < sizeof(reasons) / sizeof(reasons[0]); i++){
+        if(err == reason_codes[i])
+            fprintf(stderr, "OCLERR(%s): %s %s:%d\n", reasons[i], pref, file, line);
+        else
+            fprintf(stderr, "OCLERR(unknown): %s %s:%d\n", pref, file, line);
+        break;
     }
+    exit(1);
 }
 #define OCLERR(arg) oclAssert(#arg, arg, __FILE__, __LINE__);
 
@@ -91,8 +99,8 @@ namespace DecompCLFFTImpl {
         DecompGlobals::context = cl::Context(devt, cps);
         std::vector<cl::Device> devices = DecompGlobals::context.getInfo<CL_CONTEXT_DEVICES>();
         int devicenum = rank_in_node();
-        ASSERTMSG(devicenum < devices.size(), "devicenum out of range");
-        //if(devicenum >= devices.size()){devicenum = 0;}
+        //ASSERTMSG(devicenum < devices.size(), "devicenum out of range");
+        if(devicenum >= devices.size()){devicenum = 0;}
         std::string device_name;
         devices[devicenum].getInfo(CL_DEVICE_NAME, &device_name);
         strncpy(charbuf, device_name.c_str(), sizeof(charbuf));
@@ -114,7 +122,7 @@ namespace DecompCLFFTImpl {
             std::cerr << "decomp context has not been started" << std::endl;
             return;
         }
-        OCLERR(clfftTeardown());
+        //OCLERR(clfftTeardown());
         delete DecompGlobals::fftSetup;
         DecompImpl::end_decomp_context();
     }
@@ -132,29 +140,31 @@ namespace DecompCLFFTImpl {
                 host_ptr = DecompGlobals::queue.enqueueMapBuffer(buffer, CL_TRUE, CL_MAP_READ | CL_MAP_WRITE, 0, bytes);
                 int lock = mlock(host_ptr, bytes);
                 if(lock) fprintf(stderr, "memory region (mapbuffer) is not pinned\n");
-                DecompGlobals::queue.enqueueBarrierWithWaitList();
-                DecompGlobals::queue.flush();
+                DecompGlobals::queue.finish();
                 ASSERTMSG(host_ptr != NULL, "nullptr is returned when mapping buffer");
             }
             ~ContextMan(){
                 DecompGlobals::queue.enqueueUnmapMemObject(buffer, host_ptr);
-                DecompGlobals::queue.enqueueBarrierWithWaitList();
-                DecompGlobals::queue.flush();
+                DecompGlobals::queue.finish();
             }
             template <typename T> operator T*(){ return (T*)host_ptr; }
         };
     public:
-        size_t alloc_bytes;
+        size_t alloc_bytes, y_cont_alloc_bytes;
         cl::Buffer buffer;
+        cl::Buffer buffer_y_cont;
         MemoryMan(DecompImpl::DecompInfo di){
             size_t alloc_len = std::max(std::max(di.cmpldec.xsize.prod(), di.cmpldec.ysize.prod()), di.cmpldec.zsize.prod());
             alloc_bytes = sizeof(CT) * alloc_len;
             buffer = cl::Buffer(DecompGlobals::context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, alloc_bytes);
             DecompGlobals::queue.enqueueFillBuffer<unsigned char>(buffer, 0, 0, alloc_bytes, NULL);
-            DecompGlobals::queue.enqueueBarrierWithWaitList();
-            DecompGlobals::queue.flush();
+            y_cont_alloc_bytes = sizeof(CT) * di.cmpldec.ysize.x * di.cmpldec.ysize.y;
+            buffer_y_cont = cl::Buffer(DecompGlobals::context, CL_MEM_READ_WRITE, y_cont_alloc_bytes);
+            DecompGlobals::queue.enqueueFillBuffer<unsigned char>(buffer_y_cont, 0, 0, y_cont_alloc_bytes, NULL);
+            DecompGlobals::queue.finish();
         }
         cl_mem* get_mem(){ return &buffer.object_; }
+        cl_mem* get_y_cont_mem(){ return &buffer_y_cont.object_; }
         ContextMan operator()() { return ContextMan(buffer, alloc_bytes); }
     };
 
@@ -168,38 +178,58 @@ namespace DecompCLFFTImpl {
         DistributedFFT(DecompImpl::DecompInfo di){
             size_t shape[3];
             // plan_x_r2c: INPUT REAL X-stencil, OUTPUT CMPL X-stencil
-            int3(di.realdec.xsize.x, di.realdec.xsize.y, di.realdec.xsize.z).size_t3(shape);
+            //int3(di.realdec.xsize.x, di.realdec.xsize.y, di.realdec.xsize.z).size_t3(shape);
+            int3(di.realdec.xsize.x, 1, 1).size_t3(shape);
             OCLERR(clfftCreateDefaultPlan(&plan_x_r2c, DecompGlobals::context.object_, CLFFT_1D, shape));
+            OCLERR(clfftSetPlanScale(plan_x_r2c, CLFFT_FORWARD, cl_float(1)));
+            OCLERR(clfftSetPlanScale(plan_x_r2c, CLFFT_BACKWARD, cl_float(1)));
+            OCLERR(clfftSetPlanBatchSize(plan_x_r2c, di.realdec.xsize.y * di.realdec.xsize.z));
+            OCLERR(clfftSetPlanDistance(plan_x_r2c, di.realdec.xsize.x, di.cmpldec.xsize.x));
             // STRIDES
-            int3(1, di.realdec.xsize.x, di.realdec.xsize.x * di.realdec.xsize.y).size_t3(shape);
-            OCLERR(clfftSetPlanInStride(plan_x_r2c, CLFFT_3D, shape));
-            int3(1, di.cmpldec.xsize.x, di.cmpldec.xsize.x * di.cmpldec.xsize.y).size_t3(shape);
-            OCLERR(clfftSetPlanOutStride(plan_x_r2c, CLFFT_3D, shape));
+            int3(1, 1, 1).size_t3(shape);
+            OCLERR(clfftSetPlanInStride(plan_x_r2c, CLFFT_1D, shape));
+            int3(1, 1, 1).size_t3(shape);
+            OCLERR(clfftSetPlanOutStride(plan_x_r2c, CLFFT_1D, shape));
 
             // plan_x_c2r: INPUT CMPL X-stencil, OUTPUT REAL X-stencil
-            int3(di.realdec.xsize.x, di.realdec.xsize.y, di.realdec.xsize.z).size_t3(shape);
+            //int3(di.realdec.xsize.x, di.realdec.xsize.y, di.realdec.xsize.z).size_t3(shape);
+            int3(di.realdec.xsize.x, 1, 1).size_t3(shape);
             OCLERR(clfftCreateDefaultPlan(&plan_x_c2r, DecompGlobals::context.object_, CLFFT_1D, shape));
+            OCLERR(clfftSetPlanScale(plan_x_c2r, CLFFT_FORWARD, cl_float(1)));
+            OCLERR(clfftSetPlanScale(plan_x_c2r, CLFFT_BACKWARD, cl_float(1)));
+            OCLERR(clfftSetPlanBatchSize(plan_x_c2r, di.realdec.xsize.y * di.realdec.xsize.z));
+            OCLERR(clfftSetPlanDistance(plan_x_c2r, di.cmpldec.xsize.x, di.realdec.xsize.x));
             // STRIDES
-            int3(1, di.cmpldec.xsize.x, di.cmpldec.xsize.x * di.cmpldec.xsize.y).size_t3(shape);
-            OCLERR(clfftSetPlanInStride(plan_x_c2r, CLFFT_3D, shape));
-            int3(1, di.realdec.xsize.x, di.realdec.xsize.x * di.realdec.xsize.y).size_t3(shape);
-            OCLERR(clfftSetPlanOutStride(plan_x_c2r, CLFFT_3D, shape));
+            int3(1, 1, 1).size_t3(shape);
+            OCLERR(clfftSetPlanInStride(plan_x_c2r, CLFFT_1D, shape));
+            int3(1, 1, 1).size_t3(shape);
+            OCLERR(clfftSetPlanOutStride(plan_x_c2r, CLFFT_1D, shape));
 
             // plan_y: INPUT CMPL Y-stencil, OUTPUT CMPL Y-stencil - FFT along dim Y
-            int3(di.cmpldec.ysize.y, di.cmpldec.ysize.x, di.cmpldec.ysize.z).size_t3(shape);
+            //int3(di.cmpldec.ysize.y, di.cmpldec.ysize.x, di.cmpldec.ysize.z).size_t3(shape);
+            int3(di.cmpldec.ysize.y, 1, 1).size_t3(shape);
             OCLERR(clfftCreateDefaultPlan(&plan_y,     DecompGlobals::context.object_, CLFFT_1D, shape));
+            OCLERR(clfftSetPlanScale(plan_y, CLFFT_FORWARD, cl_float(1)));
+            OCLERR(clfftSetPlanScale(plan_y, CLFFT_BACKWARD, cl_float(1)));
+            OCLERR(clfftSetPlanBatchSize(plan_y, di.cmpldec.ysize.x));
+            OCLERR(clfftSetPlanDistance(plan_y, 1, 1));
             // STRIDES
-            int3(di.cmpldec.ysize.x, 1, di.cmpldec.ysize.x * di.cmpldec.ysize.y).size_t3(shape);
-            OCLERR(clfftSetPlanInStride(plan_y,  CLFFT_3D, shape));
-            OCLERR(clfftSetPlanOutStride(plan_y, CLFFT_3D, shape));
+            int3(di.cmpldec.ysize.x, 1, 1).size_t3(shape);
+            OCLERR(clfftSetPlanInStride(plan_y,  CLFFT_1D, shape));
+            OCLERR(clfftSetPlanOutStride(plan_y, CLFFT_1D, shape));
 
             // plan_z: INPUT CMPL Z-stencil, OUTPUT CMPL Z-stencil
-            int3(di.cmpldec.zsize.z, di.cmpldec.zsize.x, di.cmpldec.zsize.y).size_t3(shape);
-            OCLERR(clfftCreateDefaultPlan(&plan_z,     DecompGlobals::context.object_, CLFFT_1D, shape));
+            //int3(di.cmpldec.zsize.z, di.cmpldec.zsize.x, di.cmpldec.zsize.y).size_t3(shape);
+            int3(di.cmpldec.zsize.z, 1, 1).size_t3(shape);
+            OCLERR(clfftCreateDefaultPlan(&plan_z, DecompGlobals::context.object_, CLFFT_1D, shape));
+            OCLERR(clfftSetPlanScale(plan_z, CLFFT_FORWARD, cl_float(1)));
+            OCLERR(clfftSetPlanScale(plan_z, CLFFT_BACKWARD, cl_float(1)));
+            OCLERR(clfftSetPlanBatchSize(plan_z, di.cmpldec.zsize.x * di.cmpldec.zsize.y));
+            OCLERR(clfftSetPlanDistance(plan_z, 1, 1));
             // STRIDES
-            int3(di.cmpldec.zsize.x * di.cmpldec.zsize.y, 1, di.cmpldec.zsize.x).size_t3(shape);
-            OCLERR(clfftSetPlanInStride(plan_y,  CLFFT_3D, shape));
-            OCLERR(clfftSetPlanOutStride(plan_y, CLFFT_3D, shape));
+            int3(di.cmpldec.zsize.x * di.cmpldec.zsize.y, 1, 1).size_t3(shape);
+            OCLERR(clfftSetPlanInStride(plan_z,  CLFFT_1D, shape));
+            OCLERR(clfftSetPlanOutStride(plan_z, CLFFT_1D, shape));
 
             clfftPrecision prec = sizeof(RT) == 4 ? CLFFT_SINGLE : CLFFT_DOUBLE;
             //clfftPrecision prec = precbytes == 4 ? CLFFT_SINGLE_FAST : CLFFT_DOUBLE_FAST;
@@ -224,7 +254,7 @@ namespace DecompCLFFTImpl {
             OCLERR(clfftBakePlan(plan_y,     1, &DecompGlobals::queue.object_, NULL, NULL));
             OCLERR(clfftBakePlan(plan_z,     1, &DecompGlobals::queue.object_, NULL, NULL));
 
-            DecompGlobals::queue.enqueueBarrierWithWaitList();
+            DecompGlobals::queue.finish();
         }
         ~DistributedFFT(){
             OCLERR(clfftDestroyPlan(&plan_x_r2c));
@@ -234,31 +264,45 @@ namespace DecompCLFFTImpl {
         }
         void forward(DecompArray& in, DecompArray& out){
             ASSERTMSG(in.decinfo == out.decinfo, "arrays of different decomposition index cannot be transformed");
+
                    if(in.is_x() and out.is_x() and in.is_real() and out.is_cmpl()){
                 OCLERR(clfftEnqueueTransform(plan_x_r2c, CLFFT_FORWARD, 1,
                        &DecompGlobals::queue.object_, 0, NULL, NULL, in.mm.get_mem(), out.mm.get_mem(), NULL));
             } else if(in.is_y() and out.is_y() and in.is_cmpl() and out.is_cmpl()){
-                OCLERR(clfftEnqueueTransform(plan_y, CLFFT_FORWARD, 1,
-                       &DecompGlobals::queue.object_, 0, NULL, NULL, in.mm.get_mem(), out.mm.get_mem(), NULL));
+                size_t stride = in.mm.y_cont_alloc_bytes;
+                for(int zi = 0; zi < in.decinfo.cmpldec.ysize.z; zi++){
+                    OCLERR(clEnqueueCopyBuffer(DecompGlobals::queue.object_, *in.mm.get_mem(), *in.mm.get_y_cont_mem(), zi * stride, 0, stride, 0, NULL, NULL));
+                    OCLERR(clfftEnqueueTransform(plan_y, CLFFT_FORWARD, 1,
+                           &DecompGlobals::queue.object_, 0, NULL, NULL, in.mm.get_y_cont_mem(), out.mm.get_y_cont_mem(), NULL));
+                    OCLERR(clEnqueueCopyBuffer(DecompGlobals::queue.object_, *out.mm.get_y_cont_mem(), *out.mm.get_mem(), 0, zi * stride, stride, 0, NULL, NULL));
+                }
             } else if(in.is_z() and out.is_z() and in.is_cmpl() and out.is_cmpl()){
                 OCLERR(clfftEnqueueTransform(plan_z, CLFFT_FORWARD, 1,
                        &DecompGlobals::queue.object_, 0, NULL, NULL, in.mm.get_mem(), out.mm.get_mem(), NULL));
             } else ASSERTMSG(false, "array decomposition mismatch in FFT::forward");
-            DecompGlobals::queue.enqueueBarrierWithWaitList();
+
+            DecompGlobals::queue.finish();
         }
         void backward(DecompArray& in, DecompArray& out){
             ASSERTMSG(in.decinfo == out.decinfo, "arrays of different decomposition index cannot be transformed");
+
                    if(in.is_x() and out.is_x() and in.is_cmpl() and out.is_real()){
                 OCLERR(clfftEnqueueTransform(plan_x_c2r, CLFFT_BACKWARD, 1,
                        &DecompGlobals::queue.object_, 0, NULL, NULL, in.mm.get_mem(), out.mm.get_mem(), NULL));
             } else if(in.is_y() and out.is_y() and in.is_cmpl() and out.is_cmpl()){
-                OCLERR(clfftEnqueueTransform(plan_y, CLFFT_BACKWARD, 1,
-                       &DecompGlobals::queue.object_, 0, NULL, NULL, in.mm.get_mem(), out.mm.get_mem(), NULL));
+                size_t stride = sizeof(CT) * in.decinfo.cmpldec.ysize.x * in.decinfo.cmpldec.ysize.y;
+                for(int zi = 0; zi < in.decinfo.cmpldec.ysize.z; zi++){
+                    OCLERR(clEnqueueCopyBuffer(DecompGlobals::queue.object_, *in.mm.get_mem(), *in.mm.get_y_cont_mem(), zi * stride, 0, stride, 0, NULL, NULL));
+                    OCLERR(clfftEnqueueTransform(plan_y, CLFFT_BACKWARD, 1,
+                           &DecompGlobals::queue.object_, 0, NULL, NULL, in.mm.get_y_cont_mem(), out.mm.get_y_cont_mem(), NULL));
+                    OCLERR(clEnqueueCopyBuffer(DecompGlobals::queue.object_, *out.mm.get_y_cont_mem(), *out.mm.get_mem(), 0, zi * stride, stride, 0, NULL, NULL));
+                }
             } else if(in.is_z() and out.is_z() and in.is_cmpl() and out.is_cmpl()){
                 OCLERR(clfftEnqueueTransform(plan_z, CLFFT_BACKWARD, 1,
                        &DecompGlobals::queue.object_, 0, NULL, NULL, in.mm.get_mem(), out.mm.get_mem(), NULL));
             } else ASSERTMSG(false, "array decomposition mismatch in FFT::backward");
-            DecompGlobals::queue.enqueueBarrierWithWaitList();
+
+            DecompGlobals::queue.finish();
         }
     };
 }
