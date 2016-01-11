@@ -41,8 +41,6 @@ int main(int argc, char* argv[]){
     for(int it = 1; it <= 10; it++){
         tm.start();
         fft.r2c(arrA, arrB);
-        arrB.save("output.bin");
-        break;
         fft.c2r(arrB, arrA);
         tm.stop();
     }
