@@ -2,7 +2,12 @@ include host.mk
 
 .PHONY: all, clean
 
-all: fftw_single clfft_single
+all: fftw_single clfft_single clfft_single_uhp
+
+clfft_single_uhp.o: main_clfft_uhp.cpp decomp.hpp decomp-clfft-uhp.hpp
+	$(CXX) $(CFLAGS) $(CLINC) -I$(CLFFTINC) -Wno-deprecated-declarations -std=c++11 -DSINGLEFLOAT -c main_clfft_uhp.cpp -o $@
+clfft_single_uhp: clfft_single_uhp.o interop.o
+	$(CXX) $(LFLAGS) -L$(CLFFTLIB) -lOpenCL -lclFFT clfft_single_uhp.o interop.o $(LIB2DECOMPS) -o $@
 
 clfft_single.o: main_clfft.cpp decomp.hpp decomp-clfft.hpp
 	$(CXX) $(CFLAGS) $(CLINC) -I$(CLFFTINC) -Wno-deprecated-declarations -std=c++11 -DSINGLEFLOAT -c main_clfft.cpp -o $@
