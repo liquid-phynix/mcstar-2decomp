@@ -8,6 +8,9 @@ namespace DecompImpl {
     TimeAcc tm2;
     TimeAcc tm3;
     TimeAcc tm4;
+
+    TimeAcc fwx, fwy, fwz;
+    TimeAcc bwx, bwy, bwz;
 }
 
 namespace Decomp {
@@ -48,6 +51,14 @@ int main(int argc, char* argv[]){
     MASTER tm.report_avg_ms("one full %f ms\n");
     MASTER DecompImpl::tm1.report_avg_ms("fft > %f ms\n");
     MASTER DecompImpl::tm2.report_avg_ms("fft < %f ms\n");
+
+    MASTER DecompImpl::fwx.report_avg_ms("fft > x %f ms\n");
+    MASTER DecompImpl::fwy.report_avg_ms("fft > y %f ms\n");
+    MASTER DecompImpl::fwz.report_avg_ms("fft > z %f ms\n");
+    MASTER DecompImpl::bwx.report_avg_ms("fft < x %f ms\n");
+    MASTER DecompImpl::bwy.report_avg_ms("fft < y %f ms\n");
+    MASTER DecompImpl::bwz.report_avg_ms("fft < z %f ms\n");
+
     MASTER DecompImpl::tm3.report_avg_ms("trans > %f ms\n");
     MASTER DecompImpl::tm4.report_avg_ms("trans < %f ms\n");
 

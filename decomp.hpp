@@ -342,22 +342,29 @@ namespace DecompImpl {
             ASSERTMSG(a.is_real() and b.is_cmpl() and a.is_x() and b.is_z(), "sanity check failed in r2c()");
             // STEP 1
             tm1.start();
+            fwx.start();
             static_cast<Derived*>(this)->forward(a, b.as_x()); // x-fft, real -> cmpl
+            fwx.stop(true);
             tm1.stop(false);
             // STEP 2
             tm3.start();
             b >> a.as_cmpl().as_y(); // x -> y
-            // STEP 3
-            tm3.start();
-            static_cast<Derived*>(this)->forward(a, b.as_y()); // y-fft, cmpl -> cmpl
             tm3.stop(false);
+            // STEP 3
+            tm1.start();
+            fwy.start();
+            static_cast<Derived*>(this)->forward(a, b.as_y()); // y-fft, cmpl -> cmpl
+            fwy.stop(true);
+            tm1.stop(false);
             // STEP 4
             tm3.start();
             b >> a.as_z(); // y -> z
             tm3.stop(true);
             // STEP 5
             tm1.start();
+            fwz.start();
             static_cast<Derived*>(this)->forward(a, b.as_z()); // z-fft, cmpl -> cmpl
+            fwz.stop(true);
             tm1.stop(true);
             a.as_x().as_real();
         }
@@ -366,7 +373,9 @@ namespace DecompImpl {
             ASSERTMSG(a.is_cmpl() and b.is_real() and a.is_z() and b.is_x(), "sanity check failed in c2r()");
             // STEP 1
             tm2.start();
+            bwz.start();
             static_cast<Derived*>(this)->backward(a, b.as_z().as_cmpl()); // z-ifft, cmpl -> cmpl
+            bwz.stop(true);
             tm2.stop(false);
             // STEP 2
             tm4.start();
@@ -374,7 +383,9 @@ namespace DecompImpl {
             tm4.stop(false);
             // STEP 3
             tm2.start();
+            bwy.start();
             static_cast<Derived*>(this)->backward(a, b.as_y()); // y-ifft, cmpl -> cmpl
+            bwy.stop(true);
             tm2.stop(false);
             // STEP 4
             tm4.start();
@@ -382,7 +393,9 @@ namespace DecompImpl {
             tm4.stop(true);
             // STEP 5
             tm2.start();
+            bwx.start();
             static_cast<Derived*>(this)->backward(a, b.as_x().as_real()); // x-ifft, cmpl -> real
+            bwx.stop(true);
             tm2.stop(true);
             a.as_z();
         }

@@ -7,6 +7,9 @@ namespace DecompImpl {
     TimeAcc tm2;
     TimeAcc tm3;
     TimeAcc tm4;
+
+    TimeAcc fwx, fwy, fwz;
+    TimeAcc bwx, bwy, bwz;
 }
 
 namespace Decomp {
