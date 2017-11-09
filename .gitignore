@@ -5,3 +5,7 @@ main_double
 *.mod
 *.bin
 host.mk
+bblock
+clfft_single
+cufft_single
+fftw_single

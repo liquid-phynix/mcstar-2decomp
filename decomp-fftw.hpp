@@ -8,6 +8,8 @@ namespace DecompFFTWImpl {
     using Decomp::RT;
     using Decomp::CT;
 
+    using Decomp::SyncType;
+
 #ifdef SINGLEFLOAT
 #define FPREF(a) fftwf_##a
 #else
@@ -18,26 +20,26 @@ namespace DecompFFTWImpl {
     public:
         class ContextMan {
             CT* const ptr;
+            SyncType st;
         public:
             ContextMan() = delete;
             ContextMan(const ContextMan&) = delete;
-            ContextMan(CT* _ptr) : ptr(_ptr){}
-            ContextMan(ContextMan&& cm) : ptr(std::move(cm.ptr)){}
+            ContextMan(SyncType _st, CT* _ptr) : ptr(_ptr), st(_st){}
+            ContextMan(ContextMan&& cm) : ptr(std::move(cm.ptr)), st(std::move(cm.st)){}
             template <typename T> operator T*(){ return (T*)ptr; }
         };
         CT* ptr;
-    public:
         size_t alloc_bytes;
         MemoryMan(DecompImpl::DecompInfo di){
             size_t alloc_len = std::max(std::max(di.cmpldec.xsize.prod(), di.cmpldec.ysize.prod()), di.cmpldec.zsize.prod());
             alloc_bytes = sizeof(CT) * alloc_len;
             ptr = (CT*)FPREF(malloc)(alloc_bytes);
             int lock = mlock(ptr, alloc_bytes);
-            if(lock) fprintf(stderr, "memory region cannot be pinned\n");
+            if(lock) fprintf(stderr, "MemoryMan: memory region cannot be pinned\n");
             memset(ptr, 0, alloc_bytes);
         }
         ~MemoryMan(){ FPREF(free)(ptr); }
-        ContextMan operator()() const { return ContextMan(ptr); }
+        ContextMan operator()(SyncType st) const { return ContextMan(st, ptr); }
     };
 
     using DecompArray = DecompImpl::DecompArray<MemoryMan>;
@@ -54,8 +56,8 @@ namespace DecompFFTWImpl {
             int repeat_rank = 2;    // 2D repetition
             int real_array_size[3]{}; int array_size[3]{};
 
-            auto manA = scratchA.mm();
-            auto manB = scratchB.mm();
+            auto manA = scratchA.mm(SyncType::NONE);
+            auto manB = scratchB.mm(SyncType::NONE);
 
             // plan for x-directional decomposition
             // xsize describes the array, extent of dimensions is reversed
@@ -114,8 +116,8 @@ namespace DecompFFTWImpl {
             FPREF(destroy_plan)(plan_z_back);
         }
         void forward(DecompArray& in, DecompArray& out){
-            auto manIn = in.mm();
-            auto manOut = out.mm();
+            auto manIn = in.mm(SyncType::NONE);
+            auto manOut = out.mm(SyncType::NONE);
             ASSERTMSG(in.decinfo == out.decinfo, "arrays of different decomposition index cannot be transformed");
                    if(in.is_x() and out.is_x() and in.is_real() and out.is_cmpl()){
                 FPREF(execute_dft_r2c(plan_x_r2c, manIn, manOut));
@@ -126,8 +128,8 @@ namespace DecompFFTWImpl {
             } else ASSERTMSG(false, "array decomposition mismatch in FFT::forward");
         }
         void backward(DecompArray& in, DecompArray& out){
-            auto manIn = in.mm();
-            auto manOut = out.mm();
+            auto manIn = in.mm(SyncType::NONE);
+            auto manOut = out.mm(SyncType::NONE);
             ASSERTMSG(in.decinfo == out.decinfo, "arrays of different decomposition index cannot be transformed");
                    if(in.is_x() and out.is_x() and in.is_cmpl() and out.is_real()){
                 FPREF(execute_dft_c2r(plan_x_c2r, manIn, manOut));

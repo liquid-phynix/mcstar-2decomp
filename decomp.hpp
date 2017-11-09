@@ -31,6 +31,8 @@ namespace DecompGlobals {
 
 namespace DecompImpl {
 
+    enum SyncType { H2D = 1, D2H, BOTH, NONE };
+
     using Decomp::RT;
     using Decomp::CT;
 
@@ -98,8 +100,8 @@ namespace DecompImpl {
                 for(int other = 0; other < size(); other++){
                     if(id_by_rank[other] != -1) continue;
                     if(0 == strncmp(&othernames[id * MPI_MAX_PROCESSOR_NAME],
-                                &othernames[other * MPI_MAX_PROCESSOR_NAME],
-                                MPI_MAX_PROCESSOR_NAME)){
+                                    &othernames[other * MPI_MAX_PROCESSOR_NAME],
+                                    MPI_MAX_PROCESSOR_NAME)){
                         *pairid += 1;
                         id_by_rank[other] = *pairid;
                         pairid_ptr[other] = pairid;
@@ -118,7 +120,7 @@ namespace DecompImpl {
         delete[] othernames;
         DecompGlobals::size_of_node = node_size;
         DecompGlobals::rank_in_node = id_within_node;
-        std::cerr << "rank (" << rank << ") has id ("
+        std::cerr << "rank (" << rank() << ") has id ("
                   << id_within_node << ") within clique of size ("
                   << node_size << ")" << std::endl;
 
@@ -130,7 +132,7 @@ namespace DecompImpl {
         int float_size;
         get_float_size(&float_size);
         if(float_size != sizeof(RT)){
-            fprintf(stderr, "sizeof(F) = %d , mytype_bytes = %d\n", sizeof(RT), float_size);
+            fprintf(stderr, "sizeof(F) = %ld , mytype_bytes = %d\n", sizeof(RT), float_size);
             ASSERTMSG(false, "main() and 2DECOMP float sizes differ");
         }
         DecompGlobals::context_started = true;
@@ -167,7 +169,8 @@ namespace DecompImpl {
         }
         int ret;
         MPI::COMM_WORLD.Scatter(lens, 1, MPI_INT, &ret, 1, MPI_INT, 0);
-        delete[] lens, bigstring;
+        delete[] lens;
+        delete [] bigstring;
         return ret;
     }
 
@@ -226,25 +229,25 @@ namespace DecompImpl {
     public:
         class ContextMan {
             CT* const ptr;
+            SyncType st;
         public:
             ContextMan() = delete;
             ContextMan(const ContextMan&) = delete;
-            ContextMan(CT* _ptr) : ptr(_ptr){}
-            ContextMan(ContextMan&& cm) : ptr(std::move(cm.ptr)){}
+            ContextMan(SyncType _st, CT* _ptr) : ptr(_ptr), st(_st){}
+            ContextMan(ContextMan&& cm) : ptr(std::move(cm.ptr)), st(std::move(cm.st)){}
             template <typename T> operator T*(){ return (T*)ptr; }
         };
         CT* ptr;
-    public:
         size_t alloc_bytes;
         MemoryMan(DecompInfo di){
             size_t alloc_len = std::max(std::max(di.cmpldec.xsize.prod(), di.cmpldec.ysize.prod()), di.cmpldec.zsize.prod());
             ptr = new CT[alloc_len]{};
             alloc_bytes = sizeof(CT) * alloc_len;
             int lock = mlock(ptr, alloc_bytes);
-            if(lock) fprintf(stderr, "memory region cannot be pinned\n");
+            if(lock) fprintf(stderr, "MemoryMan: memory region cannot be pinned\n");
         }
         ~MemoryMan(){ delete[] ptr; }
-        ContextMan operator()() const { return ContextMan(ptr); }
+        ContextMan operator()(SyncType st) const { return ContextMan(st, ptr); }
     };
 
     template <class MM>
@@ -272,19 +275,20 @@ namespace DecompImpl {
         DecompArray& as_y(){    dectype = YD; return *this; }
         DecompArray& as_z(){    dectype = ZD; return *this; }
         void operator>>(DecompArray<MM>& to){
+            ASSERTMSG(&mm != &to.mm, "in-place global transposition is not supported");
             ASSERTMSG(decinfo==to.decinfo and acctype==to.acctype, "arrays cannot be globally transposed");
             if(is_real() and to.is_real()){
                 ASSERTMSG(false, "not implemented, as only complex arrays require global transposition for fft");
                 //global_transposition(this->real_ptr(), dectype, to.real_ptr(), to.dectype, realdec.get_index());
             } else if(is_cmpl() and to.is_cmpl()){
-                auto mfrom = mm();
-                auto mto = to.mm();
+                auto mfrom = mm(D2H);
+                auto mto = to.mm(H2D);
                 global_transposition(mfrom, dectype, mto, to.dectype, decinfo.cmpldec.get_index());
             } else ASSERTMSG(false, "elem type must be the same for global transposition");
         }
 
         void save(std::string fn){
-            auto man = mm();
+            auto man = mm(D2H);
             save_array(man, (acctype==RA ? 1 : 2) * sizeof(RT),
                        acctype==RA ? decinfo.realdec.get_index() : decinfo.cmpldec.get_index(),
                        dectype, fn.c_str(), fn.size());
@@ -310,7 +314,7 @@ namespace DecompImpl {
             ixst = di->zstart.x; iyst = di->zstart.y; izst = di->zstart.z;
             xsz = di->zsize.x; ysz = di->zsize.y; zsz = di->zsize.z;
         } else ASSERTMSG(false, "cannot happen");
-        auto man = arr.mm();
+        auto man = arr.mm(H2D);
         T* ptr = man;
         for(iz = 0; iz < zsz; iz++){
             izg = izst + iz;
@@ -319,7 +323,10 @@ namespace DecompImpl {
                 for(ix = 0; ix < xsz; ix++){
                     ixg = ixst + ix;
                     closure(ixg, iyg, izg, *ptr);
-                    ptr++; }}}
+                    ptr++;
+                }
+            }
+        }
     }
 
     template <class MM>
@@ -412,6 +419,7 @@ namespace DecompImpl {
 
 namespace Decomp {
     using DecompImpl::int3;
+    using DecompImpl::SyncType;
     //using DecompImpl::start_decomp_context;
     //using DecompImpl::end_decomp_context;
     //using DecompImpl::size;

@@ -1,17 +1,17 @@
 #pragma once
 #include <complex>
 #include <vector>
+//#define __CL_ENABLE_EXCEPTIONS
+#include "cl.hpp"
 #include <clFFT.h>
 #include "decomp.hpp"
 #include "sys/mman.h"
-//#define __CL_ENABLE_EXCEPTIONS
-#include "cl.hpp"
 
 void oclAssert(const char* pref, cl_int err, const char* file, int line){
     if(err == CL_SUCCESS) return;
     const char* reasons[] = {"CL_INVALID_MEM_OBJECT", "CL_INVALID_VALUE", "CL_MISALIGNED_SUB_BUFFER_OFFSET", "CL_MEM_COPY_OVERLAP", "CL_MEM_OBJECT_ALLOCATION_FAILURE", "CL_OUT_OF_RESOURCES", "CL_OUT_OF_HOST_MEMORY"};
     const int reason_codes[] = {CL_INVALID_MEM_OBJECT, CL_INVALID_VALUE, CL_MISALIGNED_SUB_BUFFER_OFFSET, CL_MEM_COPY_OVERLAP, CL_MEM_OBJECT_ALLOCATION_FAILURE, CL_OUT_OF_RESOURCES, CL_OUT_OF_HOST_MEMORY};
-    for(int i = 0; i < sizeof(reasons) / sizeof(reasons[0]); i++){
+    for(unsigned int i = 0; i < sizeof(reasons) / sizeof(reasons[0]); i++){
         if(err == reason_codes[i])
             fprintf(stderr, "OCLERR(%s): %s %s:%d\n", reasons[i], pref, file, line);
         else
@@ -76,7 +76,7 @@ namespace DecompCLFFTImpl {
       std::cout << "**************\n";
     }
 
-    void start_decomp_context(int3 gshape, int pf = 0, cl_device_type devt = CPU){
+    void start_decomp_context(int3 gshape, unsigned int pf = 0, cl_device_type devt = CPU){
         if(DecompGlobals::context_started){
             std::cerr << "decomp context already started" << std::endl;
             return;
@@ -98,7 +98,7 @@ namespace DecompCLFFTImpl {
         cl_context_properties cps[3] = { CL_CONTEXT_PLATFORM, (cl_context_properties)(platforms[pf])(), 0 };
         DecompGlobals::context = cl::Context(devt, cps);
         std::vector<cl::Device> devices = DecompGlobals::context.getInfo<CL_CONTEXT_DEVICES>();
-        int devicenum = rank_in_node();
+        unsigned int devicenum = rank_in_node();
         //ASSERTMSG(devicenum < devices.size(), "devicenum out of range");
         if(devicenum >= devices.size()){devicenum = 0;}
         std::string device_name;
@@ -130,8 +130,8 @@ namespace DecompCLFFTImpl {
     class MemoryMan {
     public:
         class ContextMan {
-            cl::Buffer& buffer;
             void* host_ptr;
+            cl::Buffer& buffer;
         public:
             ContextMan() = delete;
             ContextMan(const ContextMan&) = delete;
@@ -157,10 +157,10 @@ namespace DecompCLFFTImpl {
             size_t alloc_len = std::max(std::max(di.cmpldec.xsize.prod(), di.cmpldec.ysize.prod()), di.cmpldec.zsize.prod());
             alloc_bytes = sizeof(CT) * alloc_len;
             buffer = cl::Buffer(DecompGlobals::context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, alloc_bytes);
-            DecompGlobals::queue.enqueueFillBuffer<unsigned char>(buffer, 0, 0, alloc_bytes, NULL);
+            //DecompGlobals::queue.enqueueFillBuffer<unsigned char>(buffer, 0, 0, alloc_bytes, NULL);
             y_cont_alloc_bytes = sizeof(CT) * di.cmpldec.ysize.x * di.cmpldec.ysize.y;
             buffer_y_cont = cl::Buffer(DecompGlobals::context, CL_MEM_READ_WRITE, y_cont_alloc_bytes);
-            DecompGlobals::queue.enqueueFillBuffer<unsigned char>(buffer_y_cont, 0, 0, y_cont_alloc_bytes, NULL);
+            //DecompGlobals::queue.enqueueFillBuffer<unsigned char>(buffer_y_cont, 0, 0, y_cont_alloc_bytes, NULL);
             DecompGlobals::queue.finish();
         }
         cl_mem* get_mem(){ return &buffer.object_; }
